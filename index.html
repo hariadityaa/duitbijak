@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <title>Duit Bijak — Finance Ledger</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A local-only finance ledger. Nothing you enter leaves your browser.">
+<meta name="theme-color" content="#16202B">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Duit Bijak">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,450;9..144,550;9..144,650&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
   :root{
@@ -1074,6 +1082,9 @@ function onClick(e) {
 /* ============================== init ============================== */
 render();
 initPersistence();
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+}
 })();
 </script>
 
