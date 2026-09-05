@@ -1,0 +1,1062 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Duit Bijak — Finance Ledger</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,450;9..144,550;9..144,650&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ink:#16202B; --ink-soft:#3E4A52; --muted:#67716B; --muted-2:#8A938D;
+    --paper:#EEF1ED; --surface:#FFFFFF; --surface-2:#F5F7F3;
+    --line:#DBE0D9; --line-strong:#16202B;
+    --brass:#96692F; --rust:#9C4A3C; --teal:#2F6B58;
+    --good:var(--teal); --bad:var(--rust); --accent:var(--brass);
+    --focus:#2A5FCC;
+    --chart-1:#B2723A; --chart-2:#9C4A3C; --chart-3:#3F7A68; --chart-4:#4F6C93;
+    --chart-5:#8A6B9E; --chart-6:#7C8C4A; --chart-7:#B5566F; --chart-8:#4A8B93;
+    --chart-9:#A98423; --chart-10:#6E6A5A;
+    --shadow: 0 1px 2px rgba(22,32,43,0.06), 0 1px 1px rgba(22,32,43,0.04);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#E8ECE8; --ink-soft:#C7D0C9; --muted:#93A197; --muted-2:#6D766F;
+      --paper:#0F1412; --surface:#171E1B; --surface-2:#1C2420;
+      --line:#2B332E; --line-strong:#E8ECE8;
+      --brass:#D0A467; --rust:#DD8776; --teal:#6FB39D;
+      --focus:#6C9BFF;
+      --chart-1:#D0A467; --chart-2:#DD8776; --chart-3:#6FB39D; --chart-4:#8FA6D6;
+      --chart-5:#BCA0D6; --chart-6:#AEC17D; --chart-7:#DD97AC; --chart-8:#82C4CC;
+      --chart-9:#D9B84E; --chart-10:#9C978A;
+      --shadow: 0 1px 3px rgba(0,0,0,0.4);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#E8ECE8; --ink-soft:#C7D0C9; --muted:#93A197; --muted-2:#6D766F;
+    --paper:#0F1412; --surface:#171E1B; --surface-2:#1C2420;
+    --line:#2B332E; --line-strong:#E8ECE8;
+    --brass:#D0A467; --rust:#DD8776; --teal:#6FB39D;
+    --focus:#6C9BFF;
+    --chart-1:#D0A467; --chart-2:#DD8776; --chart-3:#6FB39D; --chart-4:#8FA6D6;
+    --chart-5:#BCA0D6; --chart-6:#AEC17D; --chart-7:#DD97AC; --chart-8:#82C4CC;
+    --chart-9:#D9B84E; --chart-10:#9C978A;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4);
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"Public Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num{ font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; }
+  h1,h2,h3{ font-family:"Fraunces", Georgia, serif; text-wrap:balance; margin:0; }
+  a{ color:inherit; }
+  button{ font-family:inherit; }
+  ::selection{ background:var(--brass); color:var(--surface); }
+  :focus-visible{ outline:2px solid var(--focus); outline-offset:2px; border-radius:2px; }
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
+
+  .wrap{ max-width:880px; margin:0 auto; padding:1.25rem 1rem 4rem; }
+  @media (min-width:640px){ .wrap{ padding:2rem 1.5rem 4rem; } }
+
+  .app-header{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+    flex-wrap:wrap; padding-bottom:1.1rem; margin-bottom:1.25rem;
+    border-bottom:2px solid var(--line-strong);
+  }
+  .eyebrow{ font-size:11px; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:.14em; margin-bottom:5px; }
+  .app-title{ font-size:26px; font-weight:650; letter-spacing:-0.01em; color:var(--ink); }
+  .app-sub{ font-size:12.5px; color:var(--muted); margin-top:4px; }
+  .header-actions{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  .header-btns{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500;
+    padding:8px 14px; border-radius:5px; border:1px solid var(--line); background:var(--surface);
+    color:var(--ink-soft); cursor:pointer; white-space:nowrap; min-height:36px;
+  }
+  .btn:hover{ border-color:var(--accent); color:var(--accent); }
+  .btn.primary{ background:var(--ink); color:var(--surface); border-color:var(--ink); }
+  .btn.primary:hover{ opacity:.88; color:var(--surface); border-color:var(--ink); }
+  .btn.on{ border-color:var(--accent); color:var(--accent); background:var(--surface-2); }
+  .btn.ghost{ background:transparent; }
+  .btn.danger{ border-color:var(--rust); color:var(--rust); }
+  .btn:disabled{ opacity:.5; cursor:default; }
+  .btn.small{ padding:5px 10px; font-size:11.5px; min-height:auto; }
+
+  .note{ font-size:11px; color:var(--muted); text-align:right; max-width:340px; line-height:1.5; }
+  .banner{
+    display:flex; gap:9px; align-items:flex-start; padding:10px 14px; border-radius:6px;
+    font-size:12.5px; line-height:1.55; margin-bottom:1rem; border:1px solid;
+  }
+  .banner.warn{ background:var(--surface-2); border-color:var(--brass); color:var(--ink-soft); }
+  .banner.error{ background:var(--surface-2); border-color:var(--rust); color:var(--ink-soft); }
+  .banner strong{ color:var(--ink); }
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:8px;
+    padding:1.1rem 1.15rem; margin-bottom:1rem; box-shadow:var(--shadow);
+  }
+  .card-title{
+    font-size:10.5px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.11em;
+    margin:0 0 12px; padding-bottom:9px; border-bottom:1px solid var(--line);
+    display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  .section-label{ font-size:10.5px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.11em; margin:1.4rem 0 .7rem; }
+
+  .metrics{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; margin-bottom:1.25rem; }
+  .metric{ background:var(--surface-2); border-radius:7px; padding:.85rem 1rem; border-left:3px solid var(--line); }
+  .metric.ok{ border-left-color:var(--good); }
+  .metric.warn{ border-left-color:var(--bad); }
+  .metric-label{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.09em; font-weight:600; margin-bottom:5px; }
+  .metric-value{ font-family:"Fraunces",serif; font-size:26px; font-weight:600; letter-spacing:-.01em; line-height:1.1; }
+  .metric-value.warn{ color:var(--bad); } .metric-value.ok{ color:var(--good); }
+  .metric-sub{ font-size:11px; color:var(--muted); margin-top:4px; }
+
+  .toggle-row{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  .toggle-row .total{ font-size:12px; color:var(--muted); margin-left:4px; }
+  .toggle-row .total strong{ color:var(--ink); font-family:"IBM Plex Mono",monospace; }
+
+  .legend{ display:flex; flex-wrap:wrap; gap:12px 16px; margin-bottom:12px; font-size:11px; color:var(--muted); }
+  .legend span.sw{ width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:6px; flex-shrink:0; }
+  .legend-item{ display:flex; align-items:center; }
+
+  .swatch{ width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+
+  .month-row{ padding:9px 0; border-bottom:1px solid var(--line); }
+  .month-row:last-child{ border-bottom:none; }
+  .month-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; gap:8px; }
+  .month-label{ font-size:12.5px; font-weight:600; }
+  .month-total{ font-size:12.5px; font-family:"IBM Plex Mono",monospace; color:var(--muted); }
+  .stacked-bar{ display:flex; height:14px; border-radius:3px; overflow:hidden; background:var(--surface-2); }
+  .stacked-bar .seg{ height:100%; min-width:2px; }
+  .stacked-bar.empty{ background:var(--surface-2); }
+
+  .row2{ padding:10px 0; border-bottom:1px solid var(--line); }
+  .row2:last-child{ border-bottom:none; }
+  .row2-top{ display:flex; align-items:center; gap:9px; }
+  .row2-name{ flex:1; min-width:0; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row2-amt{ font-size:15px; font-weight:600; font-family:"IBM Plex Mono",monospace; white-space:nowrap; flex-shrink:0; }
+  .row2-amt small{ font-size:10.5px; font-weight:400; color:var(--muted); }
+  .row2-bottom{ display:flex; align-items:center; gap:9px; margin-top:6px; }
+  .row2-bar{ flex:1; height:6px; background:var(--surface-2); border-radius:3px; overflow:hidden; min-width:24px; }
+  .row2-bar-fill{ height:100%; border-radius:3px; }
+  .row2-total{ font-size:11px; color:var(--muted); font-family:"IBM Plex Mono",monospace; white-space:nowrap; flex-shrink:0; }
+  .row2-delta{ font-size:11.5px; font-weight:500; white-space:nowrap; flex-shrink:0; font-family:"IBM Plex Mono",monospace; }
+  .row2-delta.up{ color:var(--bad); } .row2-delta.down{ color:var(--good); } .row2-delta.flat{ color:var(--muted); }
+  .tag{ font-size:9.5px; margin-left:7px; padding:2px 6px; border-radius:8px; background:var(--surface-2); color:var(--muted); font-weight:500; }
+  .clickable{ cursor:pointer; margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:5px; }
+  .clickable:hover{ background:var(--surface-2); }
+  .clickable.selected{ background:var(--surface-2); }
+
+  .trend-cell{ display:flex; align-items:flex-end; gap:2px; height:22px; min-width:60px; }
+  .trend-cell .bar{ width:5px; border-radius:1px 1px 0 0; min-height:1px; flex-shrink:0; }
+
+  .items{ margin-top:8px; padding:10px; background:var(--surface-2); border-radius:6px; }
+  .item-row{ display:flex; align-items:baseline; gap:9px; padding:6px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .item-row:last-child{ border-bottom:none; }
+  .item-date{ color:var(--muted); font-size:11px; white-space:nowrap; font-family:"IBM Plex Mono",monospace; }
+  .item-desc{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .item-amt{ font-family:"IBM Plex Mono",monospace; font-weight:500; white-space:nowrap; }
+  .guess{ color:var(--brass); }
+
+  .period-bar{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:1.1rem; }
+  .period-bar label{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-weight:600; }
+  select, input[type=text], input[type=number], textarea{
+    font-family:inherit; font-size:13px; color:var(--ink); background:var(--surface);
+    border:1px solid var(--line); border-radius:5px; padding:6px 9px;
+  }
+  select{ min-height:36px; }
+
+  .tabs{ display:flex; gap:2px; flex-wrap:wrap; border-bottom:1px solid var(--line); margin-bottom:1.25rem; align-items:center; }
+  .tab-btn{
+    padding:9px 14px; font-size:12.5px; cursor:pointer; border:none; background:transparent;
+    color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; font-weight:500; letter-spacing:.02em;
+  }
+  .tab-btn.active{ color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+  .tabs .spacer{ margin-left:auto; }
+
+  .empty-state{ text-align:center; padding:2.5rem 1.25rem; }
+  .empty-state h2{ font-size:20px; margin-bottom:8px; }
+  .empty-state p{ color:var(--muted); font-size:13.5px; max-width:440px; margin:0 auto 1.25rem; line-height:1.6; }
+
+  textarea.paste-area{ width:100%; min-height:150px; resize:vertical; font-family:"IBM Plex Mono",monospace; font-size:11.5px; }
+  .paste-help{ font-size:12.5px; color:var(--muted); line-height:1.6; margin:0 0 10px; }
+  .btn-row{ display:flex; gap:9px; margin-top:10px; flex-wrap:wrap; }
+
+  .form-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
+  @media (min-width:560px){ .form-grid.cols2{ grid-template-columns:1fr 1fr; } }
+  .field{ display:flex; flex-direction:column; gap:5px; }
+  .field label{ font-size:12px; color:var(--muted); }
+  .field input{ width:100%; }
+
+  table.ledger{ width:100%; border-collapse:collapse; font-size:11px; font-family:"IBM Plex Mono",monospace; }
+  table.ledger th{ text-align:left; padding:6px 9px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.06em; font-size:9.5px; border-bottom:1px solid var(--line); white-space:nowrap; position:sticky; top:0; background:var(--surface-2); }
+  table.ledger td{ padding:5px 9px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.ledger th.r, table.ledger td.r{ text-align:right; }
+  .scroll-x{ overflow-x:auto; }
+  .ledger-wrap{ max-height:420px; overflow-y:auto; border-radius:6px; }
+  .month-toggle{ width:100%; text-align:left; padding:8px 12px; font-size:11.5px; background:var(--surface-2); border:1px solid var(--line); border-radius:5px; cursor:pointer; display:flex; justify-content:space-between; gap:8px; color:var(--ink); margin-bottom:6px; font-family:"IBM Plex Mono",monospace; }
+  .month-toggle .r{ color:var(--muted); }
+
+  .toast{ position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper); padding:9px 18px; border-radius:20px; font-size:12.5px; box-shadow:var(--shadow); z-index:50; }
+
+  footer.site-footer{ margin-top:2.5rem; padding-top:1.25rem; border-top:1px solid var(--line); font-size:11.5px; color:var(--muted); text-align:center; }
+  footer.site-footer a{ color:var(--accent); text-decoration:none; }
+  footer.site-footer a:hover{ text-decoration:underline; }
+
+  @media (max-width:480px){
+    .app-title{ font-size:22px; }
+    .header-actions{ align-items:stretch; width:100%; }
+    .header-btns{ justify-content:stretch; }
+    .header-btns .btn{ flex:1; justify-content:center; }
+    .note{ text-align:left; max-width:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app"></div>
+<div id="toast-holder"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================== constants ============================== */
+const STORAGE_KEY = "duit-bijak-finance-ledger-v1";
+const MONTH_ORDER = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+const CATEGORY_FIELDS = [
+  ["cat_shopping","Shopping/Online"], ["cat_dining","Dining & Food"], ["cat_transport","Transport"],
+  ["cat_sports","Sports/Padel"], ["cat_home","Home & Furniture"], ["cat_groceries","Groceries"],
+  ["cat_services","Services"], ["cat_electronics","Electronics"], ["cat_subscriptions","Subscriptions"],
+  ["cat_travel","Travel"], ["cat_fashion","Fashion"], ["cat_other","Other"],
+];
+
+// No defaults here on purpose — this is a public template. Each visitor's
+// fixed commitments are entered by hand (Deep Dive tab) and kept only in
+// their own browser; nobody else's numbers ship with the page.
+const DEFAULT_GIRO = { "HDB Loan": 0, "TMLS (Insurance/Tax)": 0, "iFAST Investment": 0, "IRAS Income Tax": 0 };
+
+const GIRO_KEYWORDS = [
+  { key: "HDB Loan", match: /HDB Housing Loan/i },
+  { key: "TMLS (Insurance/Tax)", match: /\bTMLS\b/i },
+  { key: "iFAST Investment", match: /iFAST FINANCIAL/i },
+  { key: "IRAS Income Tax", match: /IRAS Income Tax/i },
+];
+const SALARY_MATCH = /Salary Payment/i;
+const INTERBANK_TRANSFER_MATCH = /Funds Tr(a|f)nsfer|Funds Trf/i;
+const CARD_BILL_PAYMENT_MATCH = /Bill Payment.*(Cards?|DBSC)|mBK-UOB Cards|BILL PAYMENT - DBS INTERNET/i;
+const OTHER_CATEGORY_WHITELIST = new Set([
+  "iFAST Investment", "Renovation", "Internal Transfer",
+  "IRAS Income Tax", "TMLS (Insurance/Tax)", "HDB Loan", "Family Support", "Reimbursement",
+]);
+
+const OPEX_MATCH_RULES = [
+  { cat: "7-Eleven", match: /7[\s-]?ELEVEN/i },
+  { cat: "Transport - SMRT", match: /BUS\/MRT/i },
+  { cat: "Subscriptions", match: /Netflix|YOUTUBE|Grab\s*Subscription|AMZNPRIME|Amazon Prime|ANTHROPIC.*CLAUDE/i },
+  { cat: "Utilities", match: /SP Digital|STARHUB|\bGOMO\b|MyRepublic/i },
+  { cat: "Sports", match: /PLAYTOMIC|Anytime\s*Fitness|Padel|Badminton/i },
+  { cat: "Groceries", match: /\bNTUC\b|FAIRPRICE|COLD STORAGE|REDMART|NESPRESSO/i },
+  { cat: "Shopping/Online", match: /SHOPEE|LAZADA|AMAZON MKTPLC|\bSHEIN\b|UNIQLO|DECATHLON/i },
+  { cat: "Transport - Ride-Hail", match: /Grab\*|TADA Mobility|PAYPAL \*GOJEK/i },
+  { cat: "Electronics", match: /BEST DENKI|HARVEY NORMAN/i },
+  { cat: "Home & Furniture", match: /\bIKEA\b|\bMUJI\b|NIPPON HOME/i },
+  { cat: "Services", match: /URBANCOMPANY|AXS PTE LTD|HSBC LIFE|WHITECOATME/i },
+  { cat: "Travel", match: /FLYSCOOT|SCOOT PTE|BINTAN RESORT FERRIES|LOTTE DUTY FREE/i },
+  { cat: "Dining & Food", match: /SUBWAY|RAMEN|SUSHIRO|CAFE|BAKERY|BREADTALK|KITCHEN|BISTRO|PIZZ|KOPI/i },
+];
+
+/* ============================== utilities ============================== */
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+const fmt = n => { if (n == null || isNaN(n)) return "—"; const r = Math.round(n); return r < 0 ? `-$${Math.abs(r).toLocaleString()}` : `$${r.toLocaleString()}`; };
+const pct = (a, b) => b ? ((a - b) / b * 100).toFixed(0) : null;
+function hashColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return `var(--chart-${(Math.abs(h) % 10) + 1})`;
+}
+// Assigns colors by rank (order of `names`) instead of a hash, so the handful of
+// categories in any one view get visually distinct colors instead of colliding.
+function colorMap(names) {
+  const map = {};
+  names.forEach((n, i) => { if (!(n in map)) map[n] = `var(--chart-${(i % 10) + 1})`; });
+  return name => map[name] || hashColor(name);
+}
+
+/* ============================== CSV / TSV parsing ============================== */
+function parseCsv(text, delimiter) {
+  delimiter = delimiter || ",";
+  const rows = []; let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === delimiter) { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); field = "";
+        if (row.some(f => f !== "")) rows.push(row);
+        row = [];
+      } else field += c;
+    }
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+function detectDelimiter(text) {
+  const firstLine = text.split(/\r?\n/).find(l => l.trim() !== "") || "";
+  const tabs = (firstLine.match(/\t/g) || []).length;
+  const commas = (firstLine.match(/,/g) || []).length;
+  return tabs > commas ? "\t" : ",";
+}
+function parseSheetTransactions(csvText) {
+  const rows = parseCsv(csvText, detectDelimiter(csvText));
+  const headerIdx = rows.findIndex(r => (r[0] || "").trim() === "Statement File");
+  if (headerIdx === -1) throw new Error('No "Statement File" header found. Paste the full table, starting with its header row.');
+  const out = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    const file = (r[0] || "").trim();
+    if (!file || file === "File ID") break;
+    const bank = (r[1] || "").trim();
+    const date = (r[2] || "").trim();
+    const description = (r[3] || "").trim();
+    const amount = parseFloat((r[4] || "0").replace(/,/g, ""));
+    const type = (r[5] || "").trim().toUpperCase();
+    const category = (r[6] || "").trim();
+    if (!date || !bank) continue;
+    out.push({ file, bank, date, description, amount: isNaN(amount) ? 0 : amount, type, category });
+  }
+  if (!out.length) throw new Error("No transaction rows found under the header.");
+  return out;
+}
+function classifyFile(rows) {
+  const text = rows.map(r => r.description).join(" | ");
+  if (/One Account|HDB Housing Loan|IRAS Income Tax|iFAST FINANCIAL|GIRO SALA|Salary Payment/i.test(text)) return "UOB One";
+  const bank = rows[0] && rows[0].bank;
+  if (bank === "POSB") return "POSB";
+  if (bank === "DBS") return "DBS CC";
+  if (bank === "UOB") return "UOB Card";
+  return "Unknown";
+}
+function classifyOpex(description) {
+  const hit = OPEX_MATCH_RULES.find(r => r.match.test(description || ""));
+  return hit ? hit.cat : "Other";
+}
+function monthKeyFromDate(dateStr) {
+  const parts = dateStr.trim().split(" ");
+  if (parts.length < 3) return null;
+  return `${parts[1]} ${parts[2]}`;
+}
+
+/* ============================== aggregation ============================== */
+function buildMonths(cleanRows) {
+  const byMonth = {};
+  cleanRows.forEach(tx => {
+    const month = monthKeyFromDate(tx.date);
+    if (!month) return;
+    (byMonth[month] = byMonth[month] || []).push(tx);
+  });
+  const months = {};
+  Object.entries(byMonth).forEach(([month, txs]) => {
+    const bankTxs = txs.filter(t => t.stmtType === "UOB One" || t.stmtType === "POSB");
+    const cardTxs = txs.filter(t => t.stmtType === "DBS CC" || t.stmtType === "UOB Card");
+    let salaryIn = 0, otherIn = 0, giroOut = 0, otherOut = 0, cardSpend = 0;
+    const giroCategories = { "HDB Loan": 0, "TMLS (Insurance/Tax)": 0, "iFAST Investment": 0, "IRAS Income Tax": 0 };
+    const otherCategories = {};
+    const categories = {};
+    const merchantTotals = {};
+
+    bankTxs.forEach(tx => {
+      if (INTERBANK_TRANSFER_MATCH.test(tx.description)) return;
+      if (tx.type === "DR" && CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
+      const giro = tx.type === "DR" ? GIRO_KEYWORDS.find(g => g.match.test(tx.description)) : null;
+      if (giro) { giroOut += tx.amount; giroCategories[giro.key] += tx.amount; return; }
+      if (tx.type === "CR") { if (SALARY_MATCH.test(tx.description)) salaryIn += tx.amount; else otherIn += tx.amount; return; }
+      const label = tx.category || "Uncategorized";
+      if (label === "Credit Card Payment") return;
+      if (OTHER_CATEGORY_WHITELIST.has(label)) { otherOut += tx.amount; otherCategories[label] = round2((otherCategories[label] || 0) + tx.amount); }
+      else { cardSpend += tx.amount; categories[label] = round2((categories[label] || 0) + tx.amount); }
+    });
+
+    cardTxs.forEach(tx => {
+      if (CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
+      const signed = tx.type === "DR" ? tx.amount : -tx.amount;
+      const cat = tx.category || "Uncategorized";
+      if (cat === "Credit Card Payment") return;
+      if (OTHER_CATEGORY_WHITELIST.has(cat)) { otherOut += signed; otherCategories[cat] = round2((otherCategories[cat] || 0) + signed); }
+      else {
+        cardSpend += signed; categories[cat] = round2((categories[cat] || 0) + signed);
+        const merchant = tx.description || "Unknown";
+        merchantTotals[merchant] = round2((merchantTotals[merchant] || 0) + signed);
+      }
+    });
+
+    const topMerchants = Object.entries(merchantTotals).filter(([, a]) => a > 0).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, amt]) => ({ name, amt }));
+    const allTx = txs.map(t => ({ date: t.date, account: t.stmtType, description: t.description, withdrawal: t.type === "DR" ? t.amount : null, deposit: t.type === "CR" ? t.amount : null, category: t.category || null }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    months[month] = {
+      month, salaryIn: round2(salaryIn), otherIn: round2(otherIn), totalIn: round2(salaryIn + otherIn),
+      cardSpend: round2(cardSpend), cardSpendAvailable: cardTxs.length > 0,
+      giroOut: round2(giroOut), otherOut: round2(otherOut), totalOut: round2(cardSpend + giroOut + otherOut),
+      giroCategories, categories: cardTxs.length > 0 ? categories : null, otherCategories, topMerchants, transactions: allTx,
+    };
+  });
+  return months;
+}
+function sortMonthKeys(keys) {
+  return keys.sort((a, b) => {
+    const [am, ay] = a.split(" "), [bm, by] = b.split(" ");
+    return ay !== by ? Number(ay) - Number(by) : MONTH_ORDER.indexOf(am) - MONTH_ORDER.indexOf(bm);
+  });
+}
+function syncFromText(csvText) {
+  const rawRows = parseSheetTransactions(csvText);
+  const byFile = {};
+  rawRows.forEach(r => { (byFile[r.file] = byFile[r.file] || []).push(r); });
+  const fileType = {};
+  Object.entries(byFile).forEach(([file, rows]) => { fileType[file] = classifyFile(rows); });
+  const clean = rawRows.map(r => ({ ...r, stmtType: fileType[r.file] }));
+  const monthTotals = buildMonths(clean);
+  const monthKeys = sortMonthKeys(Object.keys(monthTotals));
+  return monthKeys.map(k => monthTotals[k]);
+}
+function opexLineItems(months, category) {
+  const rows = [];
+  months.forEach(m => {
+    if (!m.cardSpendAvailable) return;
+    (m.transactions || []).forEach(tx => {
+      if (INTERBANK_TRANSFER_MATCH.test(tx.description)) return;
+      if (CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
+      if (GIRO_KEYWORDS.some(g => g.match.test(tx.description))) return;
+      const isBank = tx.account === "UOB One" || tx.account === "POSB";
+      if (isBank && tx.withdrawal == null) return;
+      const amount = tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0);
+      if (!amount) return;
+      const resolvedCat = tx.category || classifyOpex(tx.description);
+      if (resolvedCat !== category) return;
+      rows.push({ ...tx, amount, month: m.month, guessed: !tx.category });
+    });
+  });
+  return rows.sort((a, b) => b.amount - a.amount);
+}
+function ccpAdjustment(m) { const v = m.cardSpendAvailable && m.categories ? m.categories["Credit Card Payment"] : 0; return v ? -v : 0; }
+function opexAmount(m) { return m.cardSpendAvailable ? round2((m.cardSpend || 0) + ccpAdjustment(m)) : null; }
+function totalOutAdjusted(m) { return round2((m.totalOut || 0) + ccpAdjustment(m)); }
+function reimbursementAmount(m) { return (m.otherCategories && m.otherCategories["Reimbursement"]) || 0; }
+function netOpexAmount(m) { const g = opexAmount(m); return g != null ? round2(g - reimbursementAmount(m)) : null; }
+
+/* ============================== persistence ==============================
+   Two layers: the `db` capability (a shared, realtime store scoped to this
+   artifact) when the viewer grants it — this only applies if the page is
+   ever embedded inside a Claude artifact viewer. Falls back to this
+   browser's localStorage otherwise, which is the normal path when this
+   page is hosted as a plain static site (e.g. GitHub Pages): there is no
+   server and no account system here, so every visitor's data lives only
+   in their own browser and is never sent anywhere. One document per month
+   (or per fixed commitment), keyed by a sanitized id, when db is active. */
+let dbApi = null;
+const docIdForMonth = month => month.replace(/\s+/g, "_");
+const docIdForCommitment = name => name.replace(/[^\w-]+/g, "_") || "item";
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) { const parsed = JSON.parse(raw); return { months: parsed.months || [], fixedCommitments: parsed.fixedCommitments || {} }; }
+  } catch (e) {}
+  return { months: [], fixedCommitments: {} };
+}
+function saveLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); } catch (e) {} }
+
+let appData = { months: [], fixedCommitments: {} };
+let ui = {
+  tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true,
+  bucketOverview: "opex", bucketDeep: "opex", selectedCat: null,
+  showPaste: false, showDebug: false, openMonths: {}, syncError: null, lastSynced: null,
+  storage: "connecting", // "connecting" | "synced" | "local"
+};
+function resetPeriod() {
+  const n = appData.months.length;
+  ui.toIdx = Math.max(0, n - 1);
+  ui.fromIdx = Math.max(0, n - 3);
+}
+function applySnapshotMonths(rawMonths) {
+  const byKey = {}; rawMonths.forEach(m => { byKey[m.month] = m; });
+  appData.months = sortMonthKeys(Object.keys(byKey)).map(k => byKey[k]);
+  resetPeriod();
+  ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
+  render();
+}
+function applySnapshotFixed(rawFixed) {
+  const map = {};
+  rawFixed.forEach(f => { map[f.name] = f.amount; });
+  appData.fixedCommitments = map;
+  render();
+}
+async function initPersistence() {
+  const canUseDb = typeof window.claude === "object" && window.claude && typeof window.claude.use === "function";
+  const db = canUseDb ? await window.claude.use("db").catch(() => null) : null;
+  if (db) {
+    dbApi = db;
+    ui.storage = "synced";
+    db.collection("months").onSnapshot(
+      snap => applySnapshotMonths(snap.docs.filter(d => d.exists).map(d => d.data())),
+      err => { ui.storage = "local"; dbApi = null; appData = loadLocal(); resetPeriod(); ui.syncError = "Cross-device sync unavailable (" + err.message + ") — using this browser only."; render(); }
+    );
+    db.collection("fixedCommitments").onSnapshot(
+      snap => applySnapshotFixed(snap.docs.filter(d => d.exists).map(d => d.data())),
+      () => {}
+    );
+  } else {
+    ui.storage = "local";
+    appData = loadLocal();
+    resetPeriod();
+    render();
+  }
+}
+// Writes months (an array of month objects) to whichever layer is active.
+// With db, each month is its own document — a paste only overwrites the
+// months it covers, so previously synced/manual months are left alone.
+async function persistMonths(monthsArr) {
+  if (dbApi) {
+    await Promise.all(monthsArr.map(m => dbApi.collection("months").doc(docIdForMonth(m.month)).set(m)));
+  } else {
+    const byKey = {}; appData.months.forEach(m => { byKey[m.month] = m; });
+    monthsArr.forEach(m => { byKey[m.month] = m; });
+    appData.months = sortMonthKeys(Object.keys(byKey)).map(k => byKey[k]);
+    saveLocal();
+    resetPeriod();
+  }
+}
+async function persistFixedCommitment(name, amount) {
+  if (dbApi) {
+    await dbApi.collection("fixedCommitments").doc(docIdForCommitment(name)).set({ name, amount });
+  } else {
+    appData.fixedCommitments[name] = amount;
+    saveLocal();
+  }
+}
+async function deleteFixedCommitment(name) {
+  if (dbApi) {
+    await dbApi.collection("fixedCommitments").doc(docIdForCommitment(name)).delete();
+  } else {
+    delete appData.fixedCommitments[name];
+    saveLocal();
+  }
+}
+async function clearAllData() {
+  if (dbApi) {
+    const snap = await dbApi.collection("months").get();
+    await Promise.all(snap.docs.map(d => dbApi.collection("months").doc(d.id).delete()));
+    const fsnap = await dbApi.collection("fixedCommitments").get();
+    await Promise.all(fsnap.docs.map(d => dbApi.collection("fixedCommitments").doc(d.id).delete()));
+  } else {
+    appData = { months: [], fixedCommitments: {} };
+    saveLocal();
+  }
+}
+
+function showToast(msg) {
+  const holder = document.getElementById("toast-holder");
+  const el = document.createElement("div");
+  el.className = "toast"; el.textContent = msg;
+  holder.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+/* ============================== chart bits ============================== */
+function stackedBar(entries, total, colorOf) {
+  colorOf = colorOf || hashColor;
+  if (!entries.length || total <= 0) return `<div class="stacked-bar empty"></div>`;
+  const segs = entries.map(([name, val]) => {
+    if (val <= 0) return "";
+    const w = (val / total * 100).toFixed(2);
+    return `<div class="seg" style="width:${w}%;background:${colorOf(name)}" title="${esc(name)}: ${esc(fmt(val))}"></div>`;
+  }).join("");
+  return `<div class="stacked-bar">${segs}</div>`;
+}
+function trendCell(values, max) {
+  const bars = values.map(v => {
+    const h = max > 0 ? Math.max(2, Math.round(v / max * 22)) : 2;
+    return `<div class="bar" style="height:${h}px;background:${v > 0 ? "var(--muted-2)" : "transparent"}"></div>`;
+  }).join("");
+  return `<div class="trend-cell">${bars}</div>`;
+}
+
+/* ============================== render: shell ============================== */
+function render() {
+  const root = document.getElementById("app");
+  root.innerHTML = renderHeader() + renderBody();
+  wireOnce();
+}
+
+function renderHeader() {
+  const months = appData.months;
+  const range = months.length ? `${months[0].month} – ${months[months.length - 1].month}` : "no data yet";
+  const statusText = ui.storage === "synced" ? "synced across your devices" : ui.storage === "local" ? "saved in this browser only" : "connecting…";
+  return `
+  <div class="app-header">
+    <div>
+      <div class="eyebrow">Duit Bijak</div>
+      <h1 class="app-title">Finance Ledger</h1>
+      <div class="app-sub">UOB · POSB · DBS cards &middot; ${esc(range)} &middot; ${esc(statusText)}</div>
+    </div>
+    <div class="header-actions">
+      <div class="header-btns">
+        <button class="btn ${ui.showPaste ? "on" : ""}" data-action="toggle-paste">📋 Paste data</button>
+        <button class="btn ${ui.hideIncome ? "on" : ""}" data-action="toggle-income">${ui.hideIncome ? "🔒 Income hidden" : "👁 Show income"}</button>
+      </div>
+      ${ui.lastSynced ? `<span class="note">Updated ${esc(ui.lastSynced)}</span>` : ""}
+    </div>
+  </div>
+  ${ui.storage === "local" ? `<div class="banner warn">⚠ <span>This data lives only in this browser's local storage — nothing is uploaded anywhere. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
+  ${ui.syncError ? `<div class="banner error">⚠ <span>${esc(ui.syncError)}</span></div>` : ""}
+  ${ui.showPaste ? renderPastePanel() : ""}
+  `;
+}
+
+function renderPastePanel() {
+  return `
+  <div class="card">
+    <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Paste table</p>
+    <p class="paste-help">Paste your ledger — a table with columns <strong>Statement File, Bank, Date, Description, Amount, Type, Category</strong> (tab- or comma-separated, e.g. copied straight out of a spreadsheet). Existing months in the paste will be replaced; other months already stored here are kept.</p>
+    <textarea class="paste-area" id="paste-input" placeholder="Statement File&#9;Bank&#9;Date&#9;Description&#9;Amount&#9;Type&#9;Category&#10;…"></textarea>
+    <div class="btn-row">
+      <button class="btn primary" data-action="process-paste">Process pasted data</button>
+      <button class="btn ghost" data-action="cancel-paste">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function renderBody() {
+  if (!appData.months.length) return renderEmptyState();
+  const months = appData.months;
+  const safeFrom = Math.min(ui.fromIdx, months.length - 1);
+  const safeTo = Math.min(ui.toIdx, months.length - 1);
+  const filtered = months.slice(safeFrom, safeTo + 1);
+  const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
+
+  const monthOptions = months.map((m, i) => `<option value="${i}" ${i === safeFrom ? "selected" : ""}>${esc(m.month)}</option>`).join("");
+  const monthOptionsTo = months.map((m, i) => `<option value="${i}" ${i === safeTo ? "selected" : ""}>${esc(m.month)}</option>`).join("");
+
+  return `
+  <div class="period-bar">
+    <label>Period</label>
+    <select id="from-select" data-action="set-from">${monthOptions}</select>
+    <span style="font-size:11px;color:var(--muted)">to</span>
+    <select id="to-select" data-action="set-to">${monthOptionsTo}</select>
+    <span style="font-size:11px;color:var(--muted)">(${filtered.length} month${filtered.length !== 1 ? "s" : ""})</span>
+  </div>
+  ${partial.length ? `<div class="banner warn">⚠ <span><strong>${esc(partial.join(", "))}:</strong> no card statement for this month yet. Card-dependent figures show "—".</span></div>` : ""}
+  <div class="tabs">
+    <button class="tab-btn ${ui.tab === "overview" ? "active" : ""}" data-action="set-tab" data-tab="overview">Overview</button>
+    <button class="tab-btn ${ui.tab === "deepdive" ? "active" : ""}" data-action="set-tab" data-tab="deepdive">Deep Dive</button>
+    <button class="tab-btn spacer ${ui.tab === "addmonth" ? "active" : ""}" data-action="set-tab" data-tab="addmonth">+ Add Month</button>
+  </div>
+  ${ui.tab === "overview" ? renderOverview(filtered) : ""}
+  ${ui.tab === "deepdive" ? renderDeepDive(filtered) : ""}
+  ${ui.tab === "addmonth" ? renderAddMonth() : ""}
+  ${renderDebugFooter(months)}
+  `;
+}
+
+function renderEmptyState() {
+  return `
+  <div class="card empty-state">
+    <h2>No data yet</h2>
+    <p>Paste your statement ledger (Statement File, Bank, Date, Description, Amount, Type, Category columns) to build the dashboard, or add a single month by hand. Everything you enter stays in this browser only.</p>
+    <div class="btn-row" style="justify-content:center;">
+      <button class="btn primary" data-action="toggle-paste">📋 Paste data</button>
+      <button class="btn" data-action="set-tab" data-tab="addmonth">+ Add a month manually</button>
+    </div>
+  </div>
+  ${ui.tab === "addmonth" ? renderAddMonth() : ""}
+  `;
+}
+
+/* ============================== overview tab ============================== */
+function bucketSources(m, bucket) {
+  if (bucket === "opex") return m.cardSpendAvailable && m.categories ? [{ src: m.categories, tag: null }] : [];
+  return [{ src: m.giroCategories, tag: "Fixed" }, { src: m.otherCategories, tag: "One-off" }];
+}
+function renderOverview(filtered) {
+  const bucket = ui.bucketOverview;
+  const available = filtered.filter(m => m.cardSpendAvailable);
+  const totalIn = filtered.reduce((s, m) => s + m.totalIn, 0);
+  const totalOpex = available.reduce((s, m) => s + opexAmount(m), 0);
+  const netTotalOpex = available.reduce((s, m) => s + netOpexAmount(m), 0);
+  const totalOut = filtered.reduce((s, m) => s + totalOutAdjusted(m), 0);
+  const latest = filtered[filtered.length - 1];
+  const prev = filtered.length > 1 ? filtered[filtered.length - 2] : null;
+  const avgOpex = available.length ? Math.round(totalOpex / available.length) : null;
+  const netAvgOpex = available.length ? Math.round(netTotalOpex / available.length) : null;
+  const delta = (prev && prev.cardSpendAvailable && latest.cardSpendAvailable) ? pct(opexAmount(latest), opexAmount(prev)) : null;
+  const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
+
+  const totals = {}; const tags = {};
+  filtered.forEach(m => bucketSources(m, bucket).forEach(({ src, tag }) => {
+    if (!src) return;
+    Object.entries(src).forEach(([k, v]) => { if (k === "Credit Card Payment") return; if (v) { totals[k] = (totals[k] || 0) + v; if (tag) tags[k] = tag; } });
+  }));
+  const cats = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  const colorOf = colorMap(cats.map(([c]) => c));
+  const bucketTotal = cats.reduce((s, [, v]) => s + v, 0);
+  const maxCat = cats.reduce((m, [, v]) => Math.max(m, v), 0);
+  const reimb = bucket === "opex" ? filtered.reduce((s, m) => s + reimbursementAmount(m), 0) : 0;
+  const netBucketTotal = bucketTotal - reimb;
+  const catValue = (m, cat) => bucketSources(m, bucket).reduce((s, { src }) => s + ((src || {})[cat] || 0), 0);
+  const hasLatest = bucket === "opex" ? latest.cardSpendAvailable : true;
+  const hasPrev = prev && (bucket === "opex" ? prev.cardSpendAvailable : true);
+
+  const monthRows = filtered.map(m => {
+    const srcs = bucketSources(m, bucket);
+    const merged = {};
+    srcs.forEach(({ src }) => { if (src) Object.entries(src).forEach(([k, v]) => { if (k !== "Credit Card Payment" && v) merged[k] = (merged[k] || 0) + v; }); });
+    const entries = Object.entries(merged).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    const isPartial = bucket === "opex" && !m.cardSpendAvailable;
+    return `<div class="month-row">
+      <div class="month-head"><span class="month-label">${esc(m.month)}</span><span class="month-total">${isPartial ? "—" : esc(fmt(total))}</span></div>
+      ${isPartial ? `<div class="stacked-bar empty"></div>` : stackedBar(entries, total, colorOf)}
+    </div>`;
+  }).join("");
+
+  const catRows = cats.map(([cat, total]) => {
+    const latestVal = hasLatest ? catValue(latest, cat) : null;
+    const prevVal = hasPrev ? catValue(prev, cat) : null;
+    const d = (latestVal != null && prevVal != null) ? latestVal - prevVal : null;
+    const barPct = total > 0 && maxCat > 0 ? Math.min(100, total / maxCat * 100).toFixed(0) : "0";
+    const deltaHtml = d != null && Math.abs(d) > 0.5
+      ? `<span class="row2-delta ${d > 0 ? "up" : "down"}">${d > 0 ? "▲" : "▼"} ${esc(fmt(Math.abs(d)))}</span>`
+      : `<span class="row2-delta flat">—</span>`;
+    return `<div class="row2">
+      <div class="row2-top">
+        <span class="swatch" style="background:${colorOf(cat)}"></span>
+        <span class="row2-name">${esc(cat)}${tags[cat] ? `<span class="tag">${esc(tags[cat])}</span>` : ""}</span>
+        <span class="row2-amt">${esc(fmt(total / filtered.length))}<small>/mo</small></span>
+      </div>
+      <div class="row2-bottom">
+        <div class="row2-bar"><div class="row2-bar-fill" style="width:${barPct}%;background:${colorOf(cat)}"></div></div>
+        <span class="row2-total">${esc(fmt(total))} tot</span>
+        ${deltaHtml}
+      </div>
+    </div>`;
+  }).join("");
+
+  const reimbRow = (bucket === "opex" && reimb > 0) ? `
+    <div class="row2">
+      <div class="row2-top">
+        <span class="swatch" style="background:var(--teal)"></span>
+        <span class="row2-name">Reimbursement<span class="tag">Offset</span></span>
+        <span class="row2-amt" style="color:var(--good)">${esc(fmt(-reimb / filtered.length))}<small>/mo</small></span>
+      </div>
+      <div class="row2-bottom"><div class="row2-bar"></div><span class="row2-total">${esc(fmt(-reimb))} total</span></div>
+    </div>
+    <div class="row2" style="font-weight:600;">
+      <div class="row2-top"><span class="row2-name" style="font-weight:600;">Net Op-Ex</span>
+        <span class="row2-amt">${esc(fmt(netBucketTotal / filtered.length))}<small>/mo</small></span></div>
+      <div class="row2-bottom"><span class="row2-total">${esc(fmt(netBucketTotal))} total</span></div>
+    </div>` : "";
+
+  return `
+  <div class="section-label">Overview &middot; ${esc(filtered[0].month)} – ${esc(latest.month)}</div>
+  <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">
+    ${!ui.hideIncome ? `Total in ${esc(fmt(totalIn))} &middot; ` : ""}Total out ${esc(fmt(totalOut))}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}
+  </div>
+  <div class="metrics">
+    <div class="metric ${!latest.cardSpendAvailable ? "warn" : delta > 15 ? "warn" : delta < -15 ? "ok" : ""}">
+      <div class="metric-label">${esc(latest.month)} Op-Ex</div>
+      <div class="metric-value ${!latest.cardSpendAvailable ? "warn" : delta > 15 ? "warn" : delta < -15 ? "ok" : ""}">${latest.cardSpendAvailable ? esc(fmt(opexAmount(latest))) : "Pending"}</div>
+      <div class="metric-sub">${latest.cardSpendAvailable ? (delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—") : "no card stmt yet"}</div>
+    </div>
+    <div class="metric"><div class="metric-label">Avg Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${available.length} month${available.length !== 1 ? "s" : ""} confirmed</div></div>
+    <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">after reimbursements</div></div>
+  </div>
+  <div class="card">
+    <p class="card-title">Monthly spend pattern</p>
+    ${bucketToggle("bucketOverview", bucket)}
+    ${partial.length && bucket === "opex" ? `<div style="font-size:11px;color:var(--brass);font-style:italic;margin-bottom:10px;">${esc(partial.join(", "))} excluded — no card statement yet.</div>` : ""}
+    ${monthRows}
+  </div>
+  <div class="card">
+    <p class="card-title">Spend by category &middot; ${esc(filtered[0].month)} – ${esc(latest.month)} (${filtered.length} mo)</p>
+    ${bucketToggle("bucketOverview", bucket)}
+    ${cats.length === 0 ? `<div style="font-size:13px;color:var(--muted);">No data available for this view.</div>` : catRows + reimbRow}
+  </div>`;
+}
+function bucketToggle(stateKey, current) {
+  return `<div class="toggle-row">
+    <button class="btn small ${current === "opex" ? "on" : ""}" data-action="set-bucket" data-key="${stateKey}" data-value="opex">💳 Operational Expenses</button>
+    <button class="btn small ${current === "other" ? "on" : ""}" data-action="set-bucket" data-key="${stateKey}" data-value="other">🔄 Other</button>
+  </div>`;
+}
+
+/* ============================== deep dive tab ============================== */
+function renderDeepDive(filtered) {
+  const bucket = ui.bucketDeep;
+  const bucketSrcs = m => bucket === "opex" ? (m.cardSpendAvailable && m.categories ? [m.categories] : []) : [m.giroCategories, m.otherCategories];
+  const totals = {};
+  filtered.forEach(m => bucketSrcs(m).forEach(src => { if (src) Object.entries(src).forEach(([k, v]) => { if (k === "Credit Card Payment") return; if (v) totals[k] = (totals[k] || 0) + v; }); }));
+  const cats = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  const colorOf = colorMap(cats.map(([c]) => c));
+  const maxCat = cats.reduce((m, [, v]) => Math.max(m, v), 0);
+  const trendMonths = bucket === "opex" ? filtered.filter(m => m.cardSpendAvailable && m.categories) : filtered;
+  const globalMax = Math.max(1, ...cats.map(([c]) => Math.max(...trendMonths.map(m => bucketSrcs(m).reduce((s, src) => s + ((src || {})[c] || 0), 0)), 0)));
+
+  const catRows = cats.map(([cat, total]) => {
+    const clickable = bucket === "opex";
+    const selected = clickable && ui.selectedCat === cat;
+    const monthVals = trendMonths.map(m => bucketSrcs(m).reduce((s, src) => s + ((src || {})[cat] || 0), 0));
+    const barPct = total > 0 && maxCat > 0 ? (total / maxCat * 100).toFixed(0) : "0";
+    const items = selected ? renderItemized(filtered, cat) : "";
+    return `<div class="row2 ${clickable ? "clickable" : ""} ${selected ? "selected" : ""}" ${clickable ? `data-action="select-cat" data-cat="${esc(cat)}"` : ""}>
+      <div class="row2-top">
+        <span class="swatch" style="background:${colorOf(cat)}"></span>
+        <span class="row2-name">${esc(cat)}</span>
+        ${trendCell(monthVals, globalMax)}
+        <span class="row2-amt">${esc(fmt(total))}</span>
+      </div>
+      <div class="row2-bottom">
+        <div class="row2-bar"><div class="row2-bar-fill" style="width:${barPct}%;background:${colorOf(cat)}"></div></div>
+        ${trendMonths.length > 1 ? `<span class="row2-total">${esc(fmt(total / trendMonths.length))}/mo</span>` : ""}
+      </div>
+      ${items}
+    </div>`;
+  }).join("");
+
+  const merchMonths = filtered.filter(m => m.cardSpendAvailable && m.topMerchants && m.topMerchants.length);
+  const merchTotals = {};
+  merchMonths.forEach(m => m.topMerchants.forEach(({ name, amt }) => { merchTotals[name] = (merchTotals[name] || 0) + amt; }));
+  const ranked = Object.entries(merchTotals).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const merchMax = ranked[0] ? ranked[0][1] : 1;
+  const merchPeriod = merchMonths.length ? `${merchMonths[0].month} – ${merchMonths[merchMonths.length - 1].month}` : "—";
+  const merchRows = ranked.map(([name, total]) => `
+    <div class="row2">
+      <div class="row2-top"><span class="row2-name">${esc(name)}</span><span class="row2-amt">${esc(fmt(total))}</span></div>
+      <div class="row2-bottom"><div class="row2-bar"><div class="row2-bar-fill" style="width:${(total / merchMax * 100).toFixed(0)}%;background:var(--brass)"></div></div>
+      ${merchMonths.length > 1 ? `<span class="row2-total">${esc(fmt(Math.round(total / merchMonths.length)))}/mo</span>` : ""}</div>
+    </div>`).join("");
+
+  return `
+  <div class="card">
+    <p class="card-title">Category breakdown${bucket === "opex" ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">(click a row for line items)</span>' : ""}</p>
+    ${bucketToggle("bucketDeep", bucket)}
+    ${cats.length === 0 ? `<div style="font-size:13px;color:var(--muted);padding:8px 0;">No data for this view.</div>` : catRows}
+  </div>
+  ${merchMonths.length ? `<div class="card"><p class="card-title">Top merchants &middot; ${esc(merchPeriod)} &middot; credit cards</p>
+    <div style="font-size:11px;color:var(--muted);font-style:italic;margin-bottom:10px;">DBS + UOB credit cards only. Debit, NETS, PayNow not captured here.</div>
+    ${merchRows}</div>` : ""}
+  ${renderFixedCommitments()}`;
+}
+function renderFixedCommitments() {
+  const fixed = appData.fixedCommitments || {};
+  const entries = Object.entries(fixed).sort((a, b) => b[1] - a[1]);
+  const totalFixed = entries.reduce((s, [, v]) => s + v, 0);
+  const rows = entries.map(([k, v]) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;">
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(k)}</span>
+      <span style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+        <span class="num" style="font-weight:500;">${esc(fmt(v))}/mo</span>
+        <button class="btn small ghost" data-action="delete-fixed" data-name="${esc(k)}" title="Remove" style="padding:2px 8px;">×</button>
+      </span>
+    </div>`).join("");
+  return `
+  <div class="card">
+    <p class="card-title">Fixed monthly commitments</p>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">Your own recurring bills (loan, insurance, subscriptions, etc.) — entered here and kept only in this browser.</p>
+    ${entries.length ? rows : `<div style="font-size:12.5px;color:var(--muted);padding:4px 0 10px;">Nothing added yet.</div>`}
+    <div class="form-grid cols2" style="margin-top:10px;">
+      <div class="field"><label>Name</label><input type="text" id="f-fixed-name" placeholder="e.g. Rent"></div>
+      <div class="field"><label>Amount / mo</label><input type="number" inputmode="decimal" id="f-fixed-amount" placeholder="0"></div>
+    </div>
+    <div class="btn-row"><button class="btn small" data-action="add-fixed">+ Add commitment</button></div>
+    ${entries.length ? `<div style="display:flex;justify-content:space-between;padding:10px;background:var(--surface-2);border-radius:5px;margin-top:10px;font-size:13px;">
+      <span style="font-weight:500;">Total fixed monthly</span><span class="num" style="font-weight:600;color:var(--brass);">${esc(fmt(totalFixed))}</span>
+    </div>` : ""}
+  </div>`;
+}
+function renderItemized(filtered, cat) {
+  const items = opexLineItems(filtered, cat);
+  const top = items.slice(0, 50);
+  const total = items.reduce((s, r) => s + r.amount, 0);
+  if (!items.length) return `<div class="items"><div style="font-size:12.5px;color:var(--muted);">No matching transactions found.</div></div>`;
+  return `<div class="items">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;font-size:11px;color:var(--muted);">
+      <span>${items.length} matching transaction${items.length === 1 ? "" : "s"} &middot; total ${esc(fmt(total))}${items.length > 50 ? " &middot; showing top 50" : ""}</span>
+    </div>
+    <div style="font-size:10px;color:var(--muted);font-style:italic;margin-bottom:8px;">Rows marked ~ are guessed from the description, not the original manual tag — may not exactly reconcile with the total above.</div>
+    ${top.map(tx => `<div class="item-row"><span class="item-date">${esc(tx.date)}</span><span class="item-desc">${tx.guessed ? '<span class="guess">~ </span>' : ""}${esc(tx.description)}</span><span class="item-amt" style="color:${tx.amount < 0 ? "var(--good)" : "var(--ink)"}">${tx.amount < 0 ? "−" : ""}${esc(fmt(Math.abs(tx.amount)))}</span></div>`).join("")}
+  </div>`;
+}
+
+/* ============================== add month tab ============================== */
+function renderAddMonth() {
+  const catFields = CATEGORY_FIELDS.map(([key, label]) => `
+    <div class="field"><label>${esc(label)}</label><input type="number" inputmode="decimal" id="f-${key}" placeholder="0"></div>`).join("");
+  return `
+  <div class="card">
+    <p class="card-title">Add a month by hand</p>
+    <p style="font-size:13.5px;line-height:1.65;margin:0 0 14px;color:var(--ink-soft);">Use this for a month you don't have a full statement paste for yet — a manual override. Fields left blank count as $0.</p>
+    <div class="form-grid cols2">
+      <div class="field"><label>Month (e.g. Jun 2026)</label><input type="text" id="f-month" placeholder="Jun 2026"></div>
+      <div class="field"><label>Card statement available?</label>
+        <select id="f-cardAvailable"><option value="yes">Yes</option><option value="no">No</option></select></div>
+      <div class="field"><label>Salary in</label><input type="number" inputmode="decimal" id="f-salaryIn" placeholder="0"></div>
+      <div class="field"><label>Other income</label><input type="number" inputmode="decimal" id="f-otherIn" placeholder="0"></div>
+      <div class="field"><label>Total card spend</label><input type="number" inputmode="decimal" id="f-cardSpend" placeholder="0"></div>
+      <div class="field"><label>GIRO / fixed out</label><input type="number" inputmode="decimal" id="f-giroOut" placeholder="0"></div>
+      <div class="field"><label>Other one-off out</label><input type="number" inputmode="decimal" id="f-otherOut" placeholder="0"></div>
+    </div>
+    <div class="section-label">Card category breakdown</div>
+    <div class="form-grid cols2">${catFields}</div>
+    <div class="btn-row"><button class="btn primary" data-action="save-month">Save month</button></div>
+  </div>`;
+}
+
+/* ============================== debug ledger ============================== */
+function renderDebugFooter(months) {
+  return `
+  <div style="margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+    <button class="btn small danger" data-action="clear-data">${ui.confirmClear ? "Really clear? tap again" : "Clear all data"}</button>
+    <button class="btn small ghost" data-action="toggle-debug">${ui.showDebug ? "hide ledger" : "[ledger]"}</button>
+  </div>
+  ${ui.showDebug ? renderLedger(months) : ""}
+  `;
+}
+function renderLedger(months) {
+  const blocks = months.map(m => {
+    const open = !!ui.openMonths[m.month];
+    const txs = m.transactions || [];
+    return `<div style="margin-bottom:8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;">
+      <button class="month-toggle" data-action="toggle-month" data-month="${esc(m.month)}">
+        <span>${esc(m.month)}</span>
+        <span class="r">${open ? "▲ collapse" : `▼ out:${esc(fmt(m.totalOut))} · txns:${txs.length}`}</span>
+      </button>
+      ${open ? `<div class="scroll-x ledger-wrap"><table class="ledger">
+        <thead><tr><th>Date</th><th>Account</th><th>Description</th><th class="r">Withdrawal</th><th class="r">Deposit</th></tr></thead>
+        <tbody>${txs.length ? txs.map(tx => `<tr><td>${esc(tx.date)}</td><td>${esc(tx.account)}</td><td>${esc(tx.description)}</td>
+          <td class="r">${tx.withdrawal != null ? esc(fmt(tx.withdrawal)) : ""}</td><td class="r">${tx.deposit != null ? esc(fmt(tx.deposit)) : ""}</td></tr>`).join("") : `<tr><td colspan="5" style="color:var(--muted);">No transactions.</td></tr>`}</tbody>
+      </table></div>` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="section-label">Transaction ledger — all months</div>${blocks}`;
+}
+
+/* ============================== events ============================== */
+let wired = false;
+function wireOnce() {
+  if (wired) return; wired = true;
+  const root = document.getElementById("app");
+  root.addEventListener("click", onClick);
+  root.addEventListener("change", onChange);
+}
+function onChange(e) {
+  const t = e.target;
+  if (t.id === "from-select") { ui.fromIdx = Number(t.value); if (ui.fromIdx > ui.toIdx) ui.toIdx = ui.fromIdx; render(); }
+  else if (t.id === "to-select") { ui.toIdx = Number(t.value); if (ui.toIdx < ui.fromIdx) ui.fromIdx = ui.toIdx; render(); }
+}
+function onClick(e) {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  const action = btn.getAttribute("data-action");
+  if (action !== "clear-data") ui.confirmClear = false;
+
+  if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; render(); }
+  else if (action === "toggle-paste") { ui.showPaste = !ui.showPaste; render(); const ta = document.getElementById("paste-input"); if (ta) ta.focus(); }
+  else if (action === "cancel-paste") { ui.showPaste = false; render(); }
+  else if (action === "toggle-income") { ui.hideIncome = !ui.hideIncome; render(); }
+  else if (action === "set-bucket") { ui[btn.getAttribute("data-key")] = btn.getAttribute("data-value"); ui.selectedCat = null; render(); }
+  else if (action === "select-cat") { const c = btn.getAttribute("data-cat"); ui.selectedCat = ui.selectedCat === c ? null : c; render(); }
+  else if (action === "toggle-debug") { ui.showDebug = !ui.showDebug; render(); }
+  else if (action === "toggle-month") { const m = btn.getAttribute("data-month"); ui.openMonths[m] = !ui.openMonths[m]; render(); }
+  else if (action === "clear-data") {
+    if (ui.confirmClear) {
+      const storage = ui.storage;
+      clearAllData().then(() => {
+        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", bucketDeep: "opex", selectedCat: null, showPaste: false, showDebug: false, openMonths: {}, syncError: null, lastSynced: null, storage };
+        showToast("Data cleared.");
+        render();
+      }).catch(err => { ui.syncError = "Couldn't clear data: " + err.message; render(); });
+    } else { ui.confirmClear = true; render(); }
+  }
+  else if (action === "process-paste") {
+    const ta = document.getElementById("paste-input");
+    const text = ta ? ta.value : "";
+    if (!text.trim()) return;
+    let parsedMonths;
+    try { parsedMonths = syncFromText(text); }
+    catch (err) { ui.syncError = err.message; render(); return; }
+    btn.disabled = true; btn.textContent = "Processing…";
+    persistMonths(parsedMonths).then(() => {
+      ui.showPaste = false; ui.syncError = null;
+      if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
+      showToast(`Loaded ${parsedMonths.length} month${parsedMonths.length !== 1 ? "s" : ""}.`);
+      render();
+    }).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
+  }
+  else if (action === "save-month") {
+    const v = id => document.getElementById(id);
+    const month = (v("f-month").value || "").trim();
+    if (!month) { showToast("Enter a month name first."); return; }
+    const salary = Number(v("f-salaryIn").value) || 0, otherIn = Number(v("f-otherIn").value) || 0;
+    const cardSpend = Number(v("f-cardSpend").value) || 0, giroOut = Number(v("f-giroOut").value) || 0, otherOut = Number(v("f-otherOut").value) || 0;
+    const available = v("f-cardAvailable").value === "yes";
+    const categories = {};
+    CATEGORY_FIELDS.forEach(([key, label]) => { categories[label] = Number(v(`f-${key}`).value) || 0; });
+    const newMonth = {
+      month, salaryIn: salary, otherIn, totalIn: salary + otherIn,
+      cardSpend: available ? cardSpend : null, cardSpendAvailable: available,
+      giroOut, otherOut, totalOut: available ? cardSpend + giroOut + otherOut : round2(giroOut + otherOut),
+      categories: available ? categories : null,
+      giroCategories: { ...DEFAULT_GIRO }, otherCategories: {}, topMerchants: [], transactions: [],
+    };
+    btn.disabled = true; btn.textContent = "Saving…";
+    persistMonths([newMonth]).then(() => {
+      ui.tab = "overview";
+      if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
+      showToast(`${month} saved.`);
+      render();
+    }).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
+  }
+  else if (action === "add-fixed") {
+    const nameEl = document.getElementById("f-fixed-name");
+    const amtEl = document.getElementById("f-fixed-amount");
+    const name = (nameEl.value || "").trim();
+    const amount = Number(amtEl.value);
+    if (!name) { showToast("Enter a name first."); return; }
+    if (!amount || amount <= 0) { showToast("Enter an amount."); return; }
+    persistFixedCommitment(name, round2(amount)).then(() => {
+      showToast(`${name} added.`);
+      render();
+    }).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
+  }
+  else if (action === "delete-fixed") {
+    const name = btn.getAttribute("data-name");
+    deleteFixedCommitment(name).then(() => render()).catch(err => { ui.syncError = "Couldn't delete that: " + err.message; render(); });
+  }
+}
+
+/* ============================== init ============================== */
+render();
+initPersistence();
+})();
+</script>
+
+<footer class="site-footer">
+  <a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> — a local-only finance ledger. Nothing you enter here leaves your browser.
+</footer>
+
+</body>
+</html>
