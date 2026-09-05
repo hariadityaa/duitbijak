@@ -630,8 +630,13 @@ function renderHeader() {
 function renderPastePanel() {
   return `
   <div class="card">
-    <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Paste table</p>
-    <p class="paste-help">Paste your ledger — a table with columns <strong>Statement File, Bank, Date, Description, Amount, Type, Category</strong> (tab- or comma-separated, e.g. copied straight out of a spreadsheet). Existing months in the paste will be replaced; other months already stored here are kept.</p>
+    <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Import data</p>
+    <p class="paste-help">Import a table with columns <strong>Statement File, Bank, Date, Description, Amount, Type, Category</strong> — either upload a CSV file, or paste it (tab- or comma-separated, e.g. copied straight out of a spreadsheet). Existing months in the import will be replaced; other months already stored here are kept.</p>
+    <div class="btn-row" style="margin-top:0;margin-bottom:12px;">
+      <button class="btn" data-action="trigger-csv-import">📁 Import CSV file</button>
+      <input type="file" accept=".csv,.tsv,text/csv" id="csv-file-input" style="display:none">
+    </div>
+    <p class="paste-help" style="margin-top:0;">— or paste below —</p>
     <textarea class="paste-area" id="paste-input" placeholder="Statement File&#9;Bank&#9;Date&#9;Description&#9;Amount&#9;Type&#9;Category&#10;…"></textarea>
     <div class="btn-row">
       <button class="btn primary" data-action="process-paste">Process pasted data</button>
@@ -966,6 +971,28 @@ function onChange(e) {
   const t = e.target;
   if (t.id === "from-select") { ui.fromIdx = Number(t.value); if (ui.fromIdx > ui.toIdx) ui.toIdx = ui.fromIdx; render(); }
   else if (t.id === "to-select") { ui.toIdx = Number(t.value); if (ui.toIdx < ui.fromIdx) ui.fromIdx = ui.toIdx; render(); }
+  else if (t.id === "csv-file-input") {
+    const file = t.files && t.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => ingestText(String(reader.result || ""), ` from ${file.name}`);
+    reader.onerror = () => { ui.syncError = `Couldn't read ${file.name}.`; render(); };
+    reader.readAsText(file);
+    t.value = "";
+  }
+}
+// Shared by both the paste textarea and the CSV file import: parses the text,
+// saves the resulting months, and reports the outcome the same way either path.
+function ingestText(text, sourceSuffix) {
+  let parsedMonths;
+  try { parsedMonths = syncFromText(text); }
+  catch (err) { ui.syncError = err.message; render(); return; }
+  persistMonths(parsedMonths).then(() => {
+    ui.showPaste = false; ui.syncError = null;
+    if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
+    showToast(`Loaded ${parsedMonths.length} month${parsedMonths.length !== 1 ? "s" : ""}${sourceSuffix}.`);
+    render();
+  }).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
 }
 function onClick(e) {
   const btn = e.target.closest("[data-action]");
@@ -995,16 +1022,12 @@ function onClick(e) {
     const ta = document.getElementById("paste-input");
     const text = ta ? ta.value : "";
     if (!text.trim()) return;
-    let parsedMonths;
-    try { parsedMonths = syncFromText(text); }
-    catch (err) { ui.syncError = err.message; render(); return; }
     btn.disabled = true; btn.textContent = "Processing…";
-    persistMonths(parsedMonths).then(() => {
-      ui.showPaste = false; ui.syncError = null;
-      if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
-      showToast(`Loaded ${parsedMonths.length} month${parsedMonths.length !== 1 ? "s" : ""}.`);
-      render();
-    }).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
+    ingestText(text, "");
+  }
+  else if (action === "trigger-csv-import") {
+    const input = document.getElementById("csv-file-input");
+    if (input) input.click();
   }
   else if (action === "save-month") {
     const v = id => document.getElementById(id);
