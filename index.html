@@ -623,7 +623,7 @@ function renderHeader() {
     </div>
     <div class="header-actions">
       <div class="header-btns">
-        <button class="btn ${ui.showPaste ? "on" : ""}" data-action="toggle-paste">📋 Paste data</button>
+        <button class="btn ${ui.showPaste ? "on" : ""}" data-action="toggle-paste">📋 Add data</button>
         <button class="btn ${ui.hideIncome ? "on" : ""}" data-action="toggle-income">${ui.hideIncome ? "🔒 Income hidden" : "👁 Show income"}</button>
       </div>
       ${ui.lastSynced ? `<span class="note">Updated ${esc(ui.lastSynced)}</span>` : ""}
@@ -689,10 +689,9 @@ function renderEmptyState() {
   return `
   <div class="card empty-state">
     <h2>No data yet</h2>
-    <p>Paste your statement ledger (Statement File, Bank, Date, Description, Amount, Type, Category columns) to build the dashboard, or add a single month by hand. Everything you enter stays in this browser only.</p>
+    <p>Paste your statement ledger (Statement File, Bank, Date, Description, Amount, Type, Category columns) to build the dashboard. Everything you enter stays in this browser only.</p>
     <div class="btn-row" style="justify-content:center;">
-      <button class="btn primary" data-action="toggle-paste">📋 Paste data</button>
-      <button class="btn" data-action="set-tab" data-tab="addmonth">+ Add a month manually</button>
+      <button class="btn primary" data-action="toggle-paste">📋 Add data</button>
     </div>
   </div>
   ${ui.tab === "addmonth" ? renderAddMonth() : ""}
