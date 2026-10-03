@@ -3,226 +3,218 @@
 <head>
 <meta charset="utf-8">
 <title>Duit Bijak — Finance Ledger</title>
+<meta name="color-scheme" content="dark">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="A local-only finance ledger. Nothing you enter leaves your browser.">
-<meta name="theme-color" content="#16202B">
+<meta name="theme-color" content="#0a0a0a">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Duit Bijak">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,450;9..144,550;9..144,650&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <style>
+  /* Mono Dark design tokens — the single place colours, type, space and shape are defined. */
   :root{
-    --ink:#16202B; --ink-soft:#3E4A52; --muted:#67716B; --muted-2:#8A938D;
-    --paper:#EEF1ED; --surface:#FFFFFF; --surface-2:#F5F7F3;
-    --line:#DBE0D9; --line-strong:#16202B;
-    --brass:#96692F; --rust:#9C4A3C; --teal:#2F6B58;
-    --good:var(--teal); --bad:var(--rust); --accent:var(--brass);
-    --focus:#2A5FCC;
-    --chart-1:#B2723A; --chart-2:#9C4A3C; --chart-3:#3F7A68; --chart-4:#4F6C93;
-    --chart-5:#8A6B9E; --chart-6:#7C8C4A; --chart-7:#B5566F; --chart-8:#4A8B93;
-    --chart-9:#A98423; --chart-10:#6E6A5A;
-    --shadow: 0 1px 2px rgba(22,32,43,0.06), 0 1px 1px rgba(22,32,43,0.04);
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --ink:#E8ECE8; --ink-soft:#C7D0C9; --muted:#93A197; --muted-2:#6D766F;
-      --paper:#0F1412; --surface:#171E1B; --surface-2:#1C2420;
-      --line:#2B332E; --line-strong:#E8ECE8;
-      --brass:#D0A467; --rust:#DD8776; --teal:#6FB39D;
-      --focus:#6C9BFF;
-      --chart-1:#D0A467; --chart-2:#DD8776; --chart-3:#6FB39D; --chart-4:#8FA6D6;
-      --chart-5:#BCA0D6; --chart-6:#AEC17D; --chart-7:#DD97AC; --chart-8:#82C4CC;
-      --chart-9:#D9B84E; --chart-10:#9C978A;
-      --shadow: 0 1px 3px rgba(0,0,0,0.4);
-      color-scheme: dark;
-    }
-  }
-  :root[data-theme="dark"]{
-    --ink:#E8ECE8; --ink-soft:#C7D0C9; --muted:#93A197; --muted-2:#6D766F;
-    --paper:#0F1412; --surface:#171E1B; --surface-2:#1C2420;
-    --line:#2B332E; --line-strong:#E8ECE8;
-    --brass:#D0A467; --rust:#DD8776; --teal:#6FB39D;
-    --focus:#6C9BFF;
-    --chart-1:#D0A467; --chart-2:#DD8776; --chart-3:#6FB39D; --chart-4:#8FA6D6;
-    --chart-5:#BCA0D6; --chart-6:#AEC17D; --chart-7:#DD97AC; --chart-8:#82C4CC;
-    --chart-9:#D9B84E; --chart-10:#9C978A;
-    --shadow: 0 1px 3px rgba(0,0,0,0.4);
-    color-scheme: dark;
+    color-scheme:dark;
+    --bg:#0a0a0a; --surface:#111111; --surface-2:#181818;
+    --border:#262626; --border-strong:#3a3a3a;
+    --text:#ededed; --text-2:#a1a1a1; --text-3:#6b6b6b;
+    --accent:#ededed; --on-accent:#0a0a0a;
+    --danger:#ef4444; --success:#22c55e; --focus:#ededed;
+    /* chart ramp: the accent mixed into the card surface, brightest = largest */
+    --chart-1:var(--accent);
+    --chart-2:color-mix(in srgb, var(--accent) 80%, var(--surface));
+    --chart-3:color-mix(in srgb, var(--accent) 64%, var(--surface));
+    --chart-4:color-mix(in srgb, var(--accent) 52%, var(--surface));
+    --chart-5:color-mix(in srgb, var(--accent) 42%, var(--surface));
+    --chart-6:color-mix(in srgb, var(--accent) 34%, var(--surface));
+    --chart-7:color-mix(in srgb, var(--accent) 28%, var(--surface));
+    --chart-8:color-mix(in srgb, var(--accent) 23%, var(--surface));
+    --chart-9:color-mix(in srgb, var(--accent) 19%, var(--surface));
+    --chart-10:color-mix(in srgb, var(--accent) 16%, var(--surface));
+    --font-sans:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono:ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    --radius:8px; --radius-sm:6px; --radius-full:999px;
+    --ease:150ms ease;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:var(--paper); color:var(--ink);
-    font-family:"Public Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size:14px; line-height:1.5;
-    -webkit-font-smoothing:antialiased;
+    background:var(--bg); color:var(--text);
+    font-family:var(--font-sans); font-size:16px; line-height:1.5;
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
   }
-  .num{ font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; }
-  h1,h2,h3{ font-family:"Fraunces", Georgia, serif; text-wrap:balance; margin:0; }
+  .num{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+  h1,h2,h3{ font-weight:600; line-height:1.25; text-wrap:balance; margin:0; }
   a{ color:inherit; }
   button{ font-family:inherit; }
-  ::selection{ background:var(--brass); color:var(--surface); }
-  :focus-visible{ outline:2px solid var(--focus); outline-offset:2px; border-radius:2px; }
+  ::selection{ background:var(--accent); color:var(--on-accent); }
+  :focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
   @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
 
-  .wrap{ max-width:880px; margin:0 auto; padding:1.25rem 1rem 4rem; }
-  @media (min-width:640px){ .wrap{ padding:2rem 1.5rem 4rem; } }
+  .wrap{ max-width:1120px; margin:0 auto; padding:24px 16px 64px; }
+  @media (min-width:640px){ .wrap{ padding:32px 24px 64px; } }
 
   .app-header{
-    display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
-    flex-wrap:wrap; padding-bottom:1.1rem; margin-bottom:1.25rem;
-    border-bottom:2px solid var(--line-strong);
+    display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+    flex-wrap:wrap; padding-bottom:16px; margin-bottom:24px;
+    border-bottom:1px solid var(--border);
   }
-  .eyebrow{ font-size:11px; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:.14em; margin-bottom:5px; }
-  .app-title{ font-size:26px; font-weight:650; letter-spacing:-0.01em; color:var(--ink); }
-  .app-sub{ font-size:12.5px; color:var(--muted); margin-top:4px; }
+  .eyebrow{ font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+  .app-title{ font-size:24px; font-weight:600; letter-spacing:-0.02em; color:var(--text); }
+  .app-sub{ font-size:14px; color:var(--text-2); margin-top:4px; }
   .header-actions{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
   .header-btns{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 
   .btn{
-    display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500;
-    padding:8px 14px; border-radius:5px; border:1px solid var(--line); background:var(--surface);
-    color:var(--ink-soft); cursor:pointer; white-space:nowrap; min-height:36px;
+    display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:500; line-height:1;
+    height:40px; padding:0 16px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2);
+    color:var(--text); cursor:pointer; white-space:nowrap;
+    transition:background-color var(--ease), border-color var(--ease), color var(--ease), opacity var(--ease);
   }
-  .btn:hover{ border-color:var(--accent); color:var(--accent); }
-  .btn.primary{ background:var(--ink); color:var(--surface); border-color:var(--ink); }
-  .btn.primary:hover{ opacity:.88; color:var(--surface); border-color:var(--ink); }
-  .btn.on{ border-color:var(--accent); color:var(--accent); background:var(--surface-2); }
-  .btn.ghost{ background:transparent; }
-  .btn.danger{ border-color:var(--rust); color:var(--rust); }
-  .btn:disabled{ opacity:.5; cursor:default; }
-  .btn.small{ padding:5px 10px; font-size:11.5px; min-height:auto; }
+  .btn:hover:not(:disabled){ background:var(--border); border-color:var(--border-strong); }
+  .btn.primary, .btn.on{ background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
+  .btn.primary:hover:not(:disabled), .btn.on:hover:not(:disabled){ background:var(--accent); border-color:var(--accent); opacity:.88; }
+  .btn.ghost{ background:transparent; border-color:transparent; color:var(--text-2); }
+  .btn.ghost:hover:not(:disabled){ background:var(--surface-2); border-color:transparent; color:var(--text); }
+  .btn.danger{ color:var(--danger); }
+  .btn:disabled{ opacity:.4; cursor:default; }
+  .btn.small{ padding:0 12px; min-width:40px; }
 
-  .note{ font-size:11px; color:var(--muted); text-align:right; max-width:340px; line-height:1.5; }
+  .note{ font-size:12px; color:var(--text-2); text-align:right; max-width:340px; line-height:1.5; }
   .banner{
-    display:flex; gap:9px; align-items:flex-start; padding:10px 14px; border-radius:6px;
-    font-size:12.5px; line-height:1.55; margin-bottom:1rem; border:1px solid;
+    display:flex; gap:12px; align-items:flex-start; padding:12px 16px; border-radius:var(--radius);
+    font-size:14px; line-height:1.5; margin-bottom:16px; border:1px solid var(--border-strong);
+    background:var(--surface); color:var(--text-2);
   }
-  .banner.warn{ background:var(--surface-2); border-color:var(--brass); color:var(--ink-soft); }
-  .banner.error{ background:var(--surface-2); border-color:var(--rust); color:var(--ink-soft); }
-  .banner strong{ color:var(--ink); }
+  .banner svg{ flex-shrink:0; margin-top:2px; }
+  .banner.error svg{ color:var(--danger); }
+  .banner strong{ color:var(--text); }
 
   .card{
-    background:var(--surface); border:1px solid var(--line); border-radius:8px;
-    padding:1.1rem 1.15rem; margin-bottom:1rem; box-shadow:var(--shadow);
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px; margin-bottom:16px;
   }
+  @media (min-width:640px){ .card{ padding:24px; } }
   .card-title{
-    font-size:10.5px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.11em;
-    margin:0 0 12px; padding-bottom:9px; border-bottom:1px solid var(--line);
-    display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+    font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em;
+    margin:0 0 16px; padding-bottom:12px; border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
   }
-  .section-label{ font-size:10.5px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.11em; margin:1.4rem 0 .7rem; }
+  .section-label{ font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; margin:24px 0 12px; }
 
-  .metrics{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; margin-bottom:1.25rem; }
-  .metric{ background:var(--surface-2); border-radius:7px; padding:.85rem 1rem; border-left:3px solid var(--line); }
-  .metric.ok{ border-left-color:var(--good); }
-  .metric.warn{ border-left-color:var(--bad); }
-  .metric-label{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.09em; font-weight:600; margin-bottom:5px; }
-  .metric-value{ font-family:"Fraunces",serif; font-size:26px; font-weight:600; letter-spacing:-.01em; line-height:1.1; }
-  .metric-value.warn{ color:var(--bad); } .metric-value.ok{ color:var(--good); }
-  .metric-sub{ font-size:11px; color:var(--muted); margin-top:4px; }
+  .metrics{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
+  .metric{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
+  .metric.ok .metric-sub{ color:var(--success); }
+  .metric.warn .metric-sub{ color:var(--danger); }
+  .metric-label{ font-size:12px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; font-weight:600; margin-bottom:4px; }
+  .metric-value{ font-family:var(--font-mono); font-size:24px; font-weight:600; letter-spacing:-.02em; line-height:1.25; }
+  .metric-sub{ font-size:12px; color:var(--text-2); margin-top:4px; }
 
-  .toggle-row{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
-  .toggle-row .total{ font-size:12px; color:var(--muted); margin-left:4px; }
-  .toggle-row .total strong{ color:var(--ink); font-family:"IBM Plex Mono",monospace; }
+  .toggle-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+  .toggle-row .total{ font-size:14px; color:var(--text-2); margin-left:4px; }
+  .toggle-row .total strong{ color:var(--text); font-family:var(--font-mono); }
 
-  .legend{ display:flex; flex-wrap:wrap; gap:12px 16px; margin-bottom:12px; font-size:11px; color:var(--muted); }
-  .legend span.sw{ width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:6px; flex-shrink:0; }
+  .legend{ display:flex; flex-wrap:wrap; gap:12px 16px; margin-bottom:12px; font-size:12px; color:var(--text-2); }
+  .legend span.sw{ width:12px; height:12px; border-radius:4px; display:inline-block; margin-right:8px; flex-shrink:0; border:1px solid var(--border-strong); }
   .legend-item{ display:flex; align-items:center; }
 
-  .swatch{ width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+  .swatch{ width:12px; height:12px; border-radius:4px; flex-shrink:0; border:1px solid var(--border-strong); }
 
-  .month-row{ padding:9px 0; border-bottom:1px solid var(--line); }
+  .month-row{ padding:12px 0; border-bottom:1px solid var(--border); }
   .month-row:last-child{ border-bottom:none; }
-  .month-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; gap:8px; }
-  .month-label{ font-size:12.5px; font-weight:600; }
-  .month-total{ font-size:12.5px; font-family:"IBM Plex Mono",monospace; color:var(--muted); }
-  .stacked-bar{ display:flex; height:14px; border-radius:3px; overflow:hidden; background:var(--surface-2); }
+  .month-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; gap:8px; }
+  .month-label{ font-size:14px; font-weight:600; }
+  .month-total{ font-size:14px; font-family:var(--font-mono); color:var(--text-2); }
+  .stacked-bar{ display:flex; height:16px; border-radius:var(--radius-sm); overflow:hidden; background:var(--surface-2); }
   .stacked-bar .seg{ height:100%; min-width:2px; }
   .stacked-bar.empty{ background:var(--surface-2); }
 
-  .row2{ padding:10px 0; border-bottom:1px solid var(--line); }
+  .row2{ padding:12px 0; border-bottom:1px solid var(--border); }
   .row2:last-child{ border-bottom:none; }
-  .row2-top{ display:flex; align-items:center; gap:9px; }
-  .row2-name{ flex:1; min-width:0; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .row2-amt{ font-size:15px; font-weight:600; font-family:"IBM Plex Mono",monospace; white-space:nowrap; flex-shrink:0; }
-  .row2-amt small{ font-size:10.5px; font-weight:400; color:var(--muted); }
-  .row2-bottom{ display:flex; align-items:center; gap:9px; margin-top:6px; }
-  .row2-bar{ flex:1; height:6px; background:var(--surface-2); border-radius:3px; overflow:hidden; min-width:24px; }
-  .row2-bar-fill{ height:100%; border-radius:3px; }
-  .row2-total{ font-size:11px; color:var(--muted); font-family:"IBM Plex Mono",monospace; white-space:nowrap; flex-shrink:0; }
-  .row2-delta{ font-size:11.5px; font-weight:500; white-space:nowrap; flex-shrink:0; font-family:"IBM Plex Mono",monospace; }
-  .row2-delta.up{ color:var(--bad); } .row2-delta.down{ color:var(--good); } .row2-delta.flat{ color:var(--muted); }
-  .tag{ font-size:9.5px; margin-left:7px; padding:2px 6px; border-radius:8px; background:var(--surface-2); color:var(--muted); font-weight:500; }
-  .clickable{ cursor:pointer; margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:5px; }
+  .row2-top{ display:flex; align-items:center; gap:12px; }
+  .row2-name{ flex:1; min-width:0; font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row2-amt{ font-size:16px; font-weight:600; font-family:var(--font-mono); white-space:nowrap; flex-shrink:0; }
+  .row2-amt small{ font-size:12px; font-weight:400; color:var(--text-2); }
+  .row2-bottom{ display:flex; align-items:center; gap:12px; margin-top:8px; }
+  .row2-bar{ flex:1; height:8px; background:var(--surface-2); border-radius:var(--radius-sm); overflow:hidden; min-width:24px; }
+  .row2-bar-fill{ height:100%; border-radius:var(--radius-sm); }
+  .row2-total{ font-size:12px; color:var(--text-2); font-family:var(--font-mono); white-space:nowrap; flex-shrink:0; }
+  .row2-delta{ font-size:12px; font-weight:500; white-space:nowrap; flex-shrink:0; font-family:var(--font-mono); }
+  .row2-delta.up{ color:var(--danger); } .row2-delta.down{ color:var(--success); } .row2-delta.flat{ color:var(--text-2); }
+  .tag{ font-size:12px; margin-left:8px; padding:0 8px; border-radius:var(--radius-full); border:1px solid var(--border-strong); color:var(--text-2); font-weight:500; }
+  .clickable{ cursor:pointer; margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:var(--radius-sm); transition:background-color var(--ease); }
   .clickable:hover{ background:var(--surface-2); }
   .clickable.selected{ background:var(--surface-2); }
 
-  .trend-cell{ display:flex; align-items:flex-end; gap:2px; height:22px; min-width:60px; }
-  .trend-cell .bar{ width:5px; border-radius:1px 1px 0 0; min-height:1px; flex-shrink:0; }
+  .trend-cell{ display:flex; align-items:flex-end; gap:4px; height:24px; min-width:60px; }
+  .trend-cell .bar{ width:4px; border-radius:0; min-height:1px; flex-shrink:0; }
 
-  .items{ margin-top:8px; padding:10px; background:var(--surface-2); border-radius:6px; }
-  .item-row{ display:flex; align-items:baseline; gap:9px; padding:6px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .items{ margin-top:8px; padding:12px; background:var(--surface-2); border-radius:var(--radius); }
+  .item-row{ display:flex; align-items:baseline; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; }
   .item-row:last-child{ border-bottom:none; }
-  .item-date{ color:var(--muted); font-size:11px; white-space:nowrap; font-family:"IBM Plex Mono",monospace; }
+  .item-date{ color:var(--text-2); font-size:12px; white-space:nowrap; font-family:var(--font-mono); }
   .item-desc{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .item-amt{ font-family:"IBM Plex Mono",monospace; font-weight:500; white-space:nowrap; }
-  .guess{ color:var(--brass); }
+  .item-amt{ font-family:var(--font-mono); font-weight:500; white-space:nowrap; }
+  .guess{ color:var(--text-2); }
 
-  .period-bar{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:1.1rem; }
-  .period-bar label{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-weight:600; }
+  .period-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  .period-bar label{ font-size:12px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
   select, input[type=text], input[type=number], textarea{
-    font-family:inherit; font-size:13px; color:var(--ink); background:var(--surface);
-    border:1px solid var(--line); border-radius:5px; padding:6px 9px;
+    font-family:inherit; font-size:14px; color:var(--text); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:var(--radius); padding:0 12px; height:40px;
+    transition:border-color var(--ease);
   }
-  select{ min-height:36px; }
+  textarea{ height:auto; padding:12px; }
+  select:hover, input:hover, textarea:hover{ border-color:var(--border-strong); }
+  input::placeholder, textarea::placeholder{ color:var(--text-3); }
 
-  .tabs{ display:flex; gap:2px; flex-wrap:wrap; border-bottom:1px solid var(--line); margin-bottom:1.25rem; align-items:center; }
+  .tabs{ display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--border); margin-bottom:24px; align-items:center; }
   .tab-btn{
-    padding:9px 14px; font-size:12.5px; cursor:pointer; border:none; background:transparent;
-    color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; font-weight:500; letter-spacing:.02em;
+    height:40px; padding:0 16px; font-size:14px; cursor:pointer; border:none; background:transparent;
+    color:var(--text-2); border-bottom:2px solid transparent; margin-bottom:-1px; font-weight:500;
+    transition:color var(--ease), border-color var(--ease);
   }
-  .tab-btn.active{ color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+  .tab-btn:hover{ color:var(--text); }
+  .tab-btn.active{ color:var(--text); border-bottom-color:var(--accent); font-weight:600; }
   .tabs .spacer{ margin-left:auto; }
 
-  .empty-state{ text-align:center; padding:2.5rem 1.25rem; }
+  .empty-state{ text-align:center; padding:48px 16px; }
   .empty-state h2{ font-size:20px; margin-bottom:8px; }
-  .empty-state p{ color:var(--muted); font-size:13.5px; max-width:440px; margin:0 auto 1.25rem; line-height:1.6; }
+  .empty-state p{ color:var(--text-2); font-size:16px; max-width:440px; margin:0 auto 24px; line-height:1.5; }
 
-  textarea.paste-area{ width:100%; min-height:150px; resize:vertical; font-family:"IBM Plex Mono",monospace; font-size:11.5px; }
-  .paste-help{ font-size:12.5px; color:var(--muted); line-height:1.6; margin:0 0 10px; }
-  .btn-row{ display:flex; gap:9px; margin-top:10px; flex-wrap:wrap; }
+  textarea.paste-area{ width:100%; min-height:160px; resize:vertical; font-family:var(--font-mono); font-size:12px; }
+  .paste-help{ font-size:14px; color:var(--text-2); line-height:1.5; margin:0 0 12px; }
+  .btn-row{ display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
 
-  .form-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
+  .form-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
   @media (min-width:560px){ .form-grid.cols2{ grid-template-columns:1fr 1fr; } }
-  .field{ display:flex; flex-direction:column; gap:5px; }
-  .field label{ font-size:12px; color:var(--muted); }
+  .field{ display:flex; flex-direction:column; gap:4px; }
+  .field label{ font-size:14px; color:var(--text-2); }
   .field input{ width:100%; }
 
-  table.ledger{ width:100%; border-collapse:collapse; font-size:11px; font-family:"IBM Plex Mono",monospace; }
-  table.ledger th{ text-align:left; padding:6px 9px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.06em; font-size:9.5px; border-bottom:1px solid var(--line); white-space:nowrap; position:sticky; top:0; background:var(--surface-2); }
-  table.ledger td{ padding:5px 9px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.ledger{ width:100%; border-collapse:collapse; font-size:12px; font-family:var(--font-mono); }
+  table.ledger th{ text-align:left; padding:8px 12px; color:var(--text-2); font-weight:600; text-transform:uppercase; letter-spacing:.04em; font-size:12px; border-bottom:1px solid var(--border); white-space:nowrap; position:sticky; top:0; background:var(--surface-2); }
+  table.ledger td{ padding:8px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
   table.ledger th.r, table.ledger td.r{ text-align:right; }
   .scroll-x{ overflow-x:auto; }
-  .ledger-wrap{ max-height:420px; overflow-y:auto; border-radius:6px; }
-  .month-toggle{ width:100%; text-align:left; padding:8px 12px; font-size:11.5px; background:var(--surface-2); border:1px solid var(--line); border-radius:5px; cursor:pointer; display:flex; justify-content:space-between; gap:8px; color:var(--ink); margin-bottom:6px; font-family:"IBM Plex Mono",monospace; }
-  .month-toggle .r{ color:var(--muted); }
+  .ledger-wrap{ max-height:420px; overflow-y:auto; border-radius:var(--radius); }
+  .month-toggle{ width:100%; text-align:left; min-height:40px; padding:8px 12px; font-size:12px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius); cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px; color:var(--text); margin-bottom:8px; font-family:var(--font-mono); transition:background-color var(--ease); }
+  .month-toggle:hover{ background:var(--border); }
+  .month-toggle .r{ color:var(--text-2); }
 
-  .toast{ position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper); padding:9px 18px; border-radius:20px; font-size:12.5px; box-shadow:var(--shadow); z-index:50; }
+  .toast{ position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--accent); color:var(--on-accent); padding:12px 16px; border-radius:var(--radius); font-size:14px; font-weight:500; z-index:50; }
 
-  footer.site-footer{ margin-top:2.5rem; padding-top:1.25rem; border-top:1px solid var(--line); font-size:11.5px; color:var(--muted); text-align:center; }
-  footer.site-footer a{ color:var(--accent); text-decoration:none; }
-  footer.site-footer a:hover{ text-decoration:underline; }
+  footer.site-footer{ margin-top:48px; padding-top:24px; border-top:1px solid var(--border); font-size:12px; color:var(--text-2); text-align:center; }
+  footer.site-footer a{ color:var(--text); text-decoration:underline; text-underline-offset:2px; }
 
   @media (max-width:480px){
-    .app-title{ font-size:22px; }
     .header-actions{ align-items:stretch; width:100%; }
     .header-btns{ justify-content:stretch; }
-    .header-btns .btn{ flex:1; justify-content:center; }
+    .header-btns .btn{ flex:1; }
     .note{ text-align:left; max-width:none; }
   }
 </style>
@@ -598,7 +590,7 @@ function stackedBar(entries, total, colorOf) {
 function trendCell(values, max) {
   const bars = values.map(v => {
     const h = max > 0 ? Math.max(2, Math.round(v / max * 22)) : 2;
-    return `<div class="bar" style="height:${h}px;background:${v > 0 ? "var(--muted-2)" : "transparent"}"></div>`;
+    return `<div class="bar" style="height:${h}px;background:${v > 0 ? "var(--text-3)" : "transparent"}"></div>`;
   }).join("");
   return `<div class="trend-cell">${bars}</div>`;
 }
@@ -623,14 +615,14 @@ function renderHeader() {
     </div>
     <div class="header-actions">
       <div class="header-btns">
-        <button class="btn ${ui.showPaste ? "on" : ""}" data-action="toggle-paste">📋 Add data</button>
-        <button class="btn ${ui.hideIncome ? "on" : ""}" data-action="toggle-income">${ui.hideIncome ? "🔒 Income hidden" : "👁 Show income"}</button>
+        <button class="btn ${ui.showPaste ? "on" : ""}" data-action="toggle-paste">Add data</button>
+        <button class="btn ${ui.hideIncome ? "on" : ""}" data-action="toggle-income">${ui.hideIncome ? "Income hidden" : "Show income"}</button>
       </div>
       ${ui.lastSynced ? `<span class="note">Updated ${esc(ui.lastSynced)}</span>` : ""}
     </div>
   </div>
-  ${ui.storage === "local" ? `<div class="banner warn">⚠ <span>This data lives only in this browser's local storage — nothing is uploaded anywhere. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
-  ${ui.syncError ? `<div class="banner error">⚠ <span>${esc(ui.syncError)}</span></div>` : ""}
+  ${ui.storage === "local" ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>This data lives only in this browser's local storage — nothing is uploaded anywhere. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
+  ${ui.syncError ? `<div class="banner error"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>${esc(ui.syncError)}</span></div>` : ""}
   ${ui.showPaste ? renderPastePanel() : ""}
   `;
 }
@@ -641,7 +633,7 @@ function renderPastePanel() {
     <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Import data</p>
     <p class="paste-help">Import a table with columns <strong>Statement File, Bank, Date, Description, Amount, Type, Category</strong> — either upload a CSV file, or paste it (tab- or comma-separated, e.g. copied straight out of a spreadsheet). Existing months in the import will be replaced; other months already stored here are kept.</p>
     <div class="btn-row" style="margin-top:0;margin-bottom:12px;">
-      <button class="btn" data-action="trigger-csv-import">📁 Import CSV file</button>
+      <button class="btn" data-action="trigger-csv-import">Import CSV file</button>
       <input type="file" accept=".csv,.tsv,text/csv" id="csv-file-input" style="display:none">
     </div>
     <p class="paste-help" style="margin-top:0;">— or paste below —</p>
@@ -668,11 +660,11 @@ function renderBody() {
   <div class="period-bar">
     <label>Period</label>
     <select id="from-select" data-action="set-from">${monthOptions}</select>
-    <span style="font-size:11px;color:var(--muted)">to</span>
+    <span style="font-size:14px;color:var(--text-2)">to</span>
     <select id="to-select" data-action="set-to">${monthOptionsTo}</select>
-    <span style="font-size:11px;color:var(--muted)">(${filtered.length} month${filtered.length !== 1 ? "s" : ""})</span>
+    <span style="font-size:14px;color:var(--text-2)">(${filtered.length} month${filtered.length !== 1 ? "s" : ""})</span>
   </div>
-  ${partial.length ? `<div class="banner warn">⚠ <span><strong>${esc(partial.join(", "))}:</strong> no card statement for this month yet. Card-dependent figures show "—".</span></div>` : ""}
+  ${partial.length ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span><strong>${esc(partial.join(", "))}:</strong> no card statement for this month yet. Card-dependent figures show "—".</span></div>` : ""}
   <div class="tabs">
     <button class="tab-btn ${ui.tab === "overview" ? "active" : ""}" data-action="set-tab" data-tab="overview">Overview</button>
     <button class="tab-btn ${ui.tab === "deepdive" ? "active" : ""}" data-action="set-tab" data-tab="deepdive">Deep Dive</button>
@@ -691,7 +683,7 @@ function renderEmptyState() {
     <h2>No data yet</h2>
     <p>Paste your statement ledger (Statement File, Bank, Date, Description, Amount, Type, Category columns) to build the dashboard. Everything you enter stays in this browser only.</p>
     <div class="btn-row" style="justify-content:center;">
-      <button class="btn primary" data-action="toggle-paste">📋 Add data</button>
+      <button class="btn primary" data-action="toggle-paste">Add data</button>
     </div>
   </div>
   ${ui.tab === "addmonth" ? renderAddMonth() : ""}
@@ -770,9 +762,9 @@ function renderOverview(filtered) {
   const reimbRow = (bucket === "opex" && reimb > 0) ? `
     <div class="row2">
       <div class="row2-top">
-        <span class="swatch" style="background:var(--teal)"></span>
+        <span class="swatch" style="background:var(--success)"></span>
         <span class="row2-name">Reimbursement<span class="tag">Offset</span></span>
-        <span class="row2-amt" style="color:var(--good)">${esc(fmt(-reimb / filtered.length))}<small>/mo</small></span>
+        <span class="row2-amt" style="color:var(--success)">${esc(fmt(-reimb / filtered.length))}<small>/mo</small></span>
       </div>
       <div class="row2-bottom"><div class="row2-bar"></div><span class="row2-total">${esc(fmt(-reimb))} total</span></div>
     </div>
@@ -784,7 +776,7 @@ function renderOverview(filtered) {
 
   return `
   <div class="section-label">Overview &middot; ${esc(filtered[0].month)} – ${esc(latest.month)}</div>
-  <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">
+  <div style="font-size:14px;color:var(--text-2);margin-bottom:16px;">
     ${!ui.hideIncome ? `Total in ${esc(fmt(totalIn))} &middot; ` : ""}Total out ${esc(fmt(totalOut))}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}
   </div>
   <div class="metrics">
@@ -799,19 +791,19 @@ function renderOverview(filtered) {
   <div class="card">
     <p class="card-title">Monthly spend pattern</p>
     ${bucketToggle("bucketOverview", bucket)}
-    ${partial.length && bucket === "opex" ? `<div style="font-size:11px;color:var(--brass);font-style:italic;margin-bottom:10px;">${esc(partial.join(", "))} excluded — no card statement yet.</div>` : ""}
+    ${partial.length && bucket === "opex" ? `<div style="font-size:14px;color:var(--text);margin-bottom:12px;">${esc(partial.join(", "))} excluded — no card statement yet.</div>` : ""}
     ${monthRows}
   </div>
   <div class="card">
     <p class="card-title">Spend by category &middot; ${esc(filtered[0].month)} – ${esc(latest.month)} (${filtered.length} mo)</p>
     ${bucketToggle("bucketOverview", bucket)}
-    ${cats.length === 0 ? `<div style="font-size:13px;color:var(--muted);">No data available for this view.</div>` : catRows + reimbRow}
+    ${cats.length === 0 ? `<div style="font-size:14px;color:var(--text-2);">No data available for this view.</div>` : catRows + reimbRow}
   </div>`;
 }
 function bucketToggle(stateKey, current) {
   return `<div class="toggle-row">
-    <button class="btn small ${current === "opex" ? "on" : ""}" data-action="set-bucket" data-key="${stateKey}" data-value="opex">💳 Operational Expenses</button>
-    <button class="btn small ${current === "other" ? "on" : ""}" data-action="set-bucket" data-key="${stateKey}" data-value="other">🔄 Other</button>
+    <button class="btn small ${current === "opex" ? "on" : ""}" data-action="set-bucket" data-key="${stateKey}" data-value="opex">Operational expenses</button>
+    <button class="btn small ${current === "other" ? "on" : ""}" data-action="set-bucket" data-key="${stateKey}" data-value="other">Other</button>
   </div>`;
 }
 
@@ -857,18 +849,18 @@ function renderDeepDive(filtered) {
   const merchRows = ranked.map(([name, total]) => `
     <div class="row2">
       <div class="row2-top"><span class="row2-name">${esc(name)}</span><span class="row2-amt">${esc(fmt(total))}</span></div>
-      <div class="row2-bottom"><div class="row2-bar"><div class="row2-bar-fill" style="width:${(total / merchMax * 100).toFixed(0)}%;background:var(--brass)"></div></div>
+      <div class="row2-bottom"><div class="row2-bar"><div class="row2-bar-fill" style="width:${(total / merchMax * 100).toFixed(0)}%;background:var(--text)"></div></div>
       ${merchMonths.length > 1 ? `<span class="row2-total">${esc(fmt(Math.round(total / merchMonths.length)))}/mo</span>` : ""}</div>
     </div>`).join("");
 
   return `
   <div class="card">
-    <p class="card-title">Category breakdown${bucket === "opex" ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">(click a row for line items)</span>' : ""}</p>
+    <p class="card-title">Category breakdown${bucket === "opex" ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:14px;">(click a row for line items)</span>' : ""}</p>
     ${bucketToggle("bucketDeep", bucket)}
-    ${cats.length === 0 ? `<div style="font-size:13px;color:var(--muted);padding:8px 0;">No data for this view.</div>` : catRows}
+    ${cats.length === 0 ? `<div style="font-size:14px;color:var(--text-2);padding:8px 0;">No data for this view.</div>` : catRows}
   </div>
   ${merchMonths.length ? `<div class="card"><p class="card-title">Top merchants &middot; ${esc(merchPeriod)} &middot; credit cards</p>
-    <div style="font-size:11px;color:var(--muted);font-style:italic;margin-bottom:10px;">DBS + UOB credit cards only. Debit, NETS, PayNow not captured here.</div>
+    <div style="font-size:14px;color:var(--text-2);margin-bottom:12px;">DBS + UOB credit cards only. Debit, NETS, PayNow not captured here.</div>
     ${merchRows}</div>` : ""}
   ${renderFixedCommitments()}`;
 }
@@ -877,25 +869,25 @@ function renderFixedCommitments() {
   const entries = Object.entries(fixed).sort((a, b) => b[1] - a[1]);
   const totalFixed = entries.reduce((s, [, v]) => s + v, 0);
   const rows = entries.map(([k, v]) => `
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;">
       <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(k)}</span>
-      <span style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+      <span style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
         <span class="num" style="font-weight:500;">${esc(fmt(v))}/mo</span>
-        <button class="btn small ghost" data-action="delete-fixed" data-name="${esc(k)}" title="Remove" style="padding:2px 8px;">×</button>
+        <button class="btn small ghost" data-action="delete-fixed" data-name="${esc(k)}" title="Remove">×</button>
       </span>
     </div>`).join("");
   return `
   <div class="card">
     <p class="card-title">Fixed monthly commitments</p>
-    <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">Your own recurring bills (loan, insurance, subscriptions, etc.) — entered here and kept only in this browser.</p>
-    ${entries.length ? rows : `<div style="font-size:12.5px;color:var(--muted);padding:4px 0 10px;">Nothing added yet.</div>`}
+    <p style="font-size:14px;color:var(--text-2);margin:0 0 12px;">Your own recurring bills (loan, insurance, subscriptions, etc.) — entered here and kept only in this browser.</p>
+    ${entries.length ? rows : `<div style="font-size:14px;color:var(--text-2);padding:4px 0 12px;">Nothing added yet.</div>`}
     <div class="form-grid cols2" style="margin-top:10px;">
       <div class="field"><label>Name</label><input type="text" id="f-fixed-name" placeholder="e.g. Rent"></div>
       <div class="field"><label>Amount / mo</label><input type="number" inputmode="decimal" id="f-fixed-amount" placeholder="0"></div>
     </div>
     <div class="btn-row"><button class="btn small" data-action="add-fixed">+ Add commitment</button></div>
-    ${entries.length ? `<div style="display:flex;justify-content:space-between;padding:10px;background:var(--surface-2);border-radius:5px;margin-top:10px;font-size:13px;">
-      <span style="font-weight:500;">Total fixed monthly</span><span class="num" style="font-weight:600;color:var(--brass);">${esc(fmt(totalFixed))}</span>
+    ${entries.length ? `<div style="display:flex;justify-content:space-between;padding:12px;background:var(--surface-2);border-radius:8px;margin-top:10px;font-size:14px;">
+      <span style="font-weight:500;">Total fixed monthly</span><span class="num" style="font-weight:600;color:var(--text);">${esc(fmt(totalFixed))}</span>
     </div>` : ""}
   </div>`;
 }
@@ -903,13 +895,13 @@ function renderItemized(filtered, cat) {
   const items = opexLineItems(filtered, cat);
   const top = items.slice(0, 50);
   const total = items.reduce((s, r) => s + r.amount, 0);
-  if (!items.length) return `<div class="items"><div style="font-size:12.5px;color:var(--muted);">No matching transactions found.</div></div>`;
+  if (!items.length) return `<div class="items"><div style="font-size:14px;color:var(--text-2);">No matching transactions found.</div></div>`;
   return `<div class="items">
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;font-size:11px;color:var(--muted);">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;font-size:14px;color:var(--text-2);">
       <span>${items.length} matching transaction${items.length === 1 ? "" : "s"} &middot; total ${esc(fmt(total))}${items.length > 50 ? " &middot; showing top 50" : ""}</span>
     </div>
-    <div style="font-size:10px;color:var(--muted);font-style:italic;margin-bottom:8px;">Rows marked ~ are guessed from the description, not the original manual tag — may not exactly reconcile with the total above.</div>
-    ${top.map(tx => `<div class="item-row"><span class="item-date">${esc(tx.date)}</span><span class="item-desc">${tx.guessed ? '<span class="guess">~ </span>' : ""}${esc(tx.description)}</span><span class="item-amt" style="color:${tx.amount < 0 ? "var(--good)" : "var(--ink)"}">${tx.amount < 0 ? "−" : ""}${esc(fmt(Math.abs(tx.amount)))}</span></div>`).join("")}
+    <div style="font-size:14px;color:var(--text-2);margin-bottom:8px;">Rows marked ~ are guessed from the description, not the original manual tag — may not exactly reconcile with the total above.</div>
+    ${top.map(tx => `<div class="item-row"><span class="item-date">${esc(tx.date)}</span><span class="item-desc">${tx.guessed ? '<span class="guess">~ </span>' : ""}${esc(tx.description)}</span><span class="item-amt" style="color:${tx.amount < 0 ? "var(--success)" : "var(--text)"}">${tx.amount < 0 ? "−" : ""}${esc(fmt(Math.abs(tx.amount)))}</span></div>`).join("")}
   </div>`;
 }
 
@@ -920,7 +912,7 @@ function renderAddMonth() {
   return `
   <div class="card">
     <p class="card-title">Add a month by hand</p>
-    <p style="font-size:13.5px;line-height:1.65;margin:0 0 14px;color:var(--ink-soft);">Use this for a month you don't have a full statement paste for yet — a manual override. Fields left blank count as $0.</p>
+    <p style="font-size:14px;line-height:1.65;margin:0 0 14px;color:var(--text-2);">Use this for a month you don't have a full statement paste for yet — a manual override. Fields left blank count as $0.</p>
     <div class="form-grid cols2">
       <div class="field"><label>Month (e.g. Jun 2026)</label><input type="text" id="f-month" placeholder="Jun 2026"></div>
       <div class="field"><label>Card statement available?</label>
@@ -940,7 +932,7 @@ function renderAddMonth() {
 /* ============================== debug ledger ============================== */
 function renderDebugFooter(months) {
   return `
-  <div style="margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+  <div style="margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
     <button class="btn small danger" data-action="clear-data">${ui.confirmClear ? "Really clear? tap again" : "Clear all data"}</button>
     <button class="btn small ghost" data-action="toggle-debug">${ui.showDebug ? "hide ledger" : "[ledger]"}</button>
   </div>
@@ -951,7 +943,7 @@ function renderLedger(months) {
   const blocks = months.map(m => {
     const open = !!ui.openMonths[m.month];
     const txs = m.transactions || [];
-    return `<div style="margin-bottom:8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;">
+    return `<div style="margin-bottom:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
       <button class="month-toggle" data-action="toggle-month" data-month="${esc(m.month)}">
         <span>${esc(m.month)}</span>
         <span class="r">${open ? "▲ collapse" : `▼ out:${esc(fmt(m.totalOut))} · txns:${txs.length}`}</span>
@@ -959,7 +951,7 @@ function renderLedger(months) {
       ${open ? `<div class="scroll-x ledger-wrap"><table class="ledger">
         <thead><tr><th>Date</th><th>Account</th><th>Description</th><th class="r">Withdrawal</th><th class="r">Deposit</th></tr></thead>
         <tbody>${txs.length ? txs.map(tx => `<tr><td>${esc(tx.date)}</td><td>${esc(tx.account)}</td><td>${esc(tx.description)}</td>
-          <td class="r">${tx.withdrawal != null ? esc(fmt(tx.withdrawal)) : ""}</td><td class="r">${tx.deposit != null ? esc(fmt(tx.deposit)) : ""}</td></tr>`).join("") : `<tr><td colspan="5" style="color:var(--muted);">No transactions.</td></tr>`}</tbody>
+          <td class="r">${tx.withdrawal != null ? esc(fmt(tx.withdrawal)) : ""}</td><td class="r">${tx.deposit != null ? esc(fmt(tx.deposit)) : ""}</td></tr>`).join("") : `<tr><td colspan="5" style="color:var(--text-2);">No transactions.</td></tr>`}</tbody>
       </table></div>` : ""}
     </div>`;
   }).join("");

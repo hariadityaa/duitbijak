@@ -1,6 +1,6 @@
 // Bump this on any change to the cached files below so old clients pick up
 // the update instead of serving a stale app shell forever.
-const CACHE_NAME = "duit-bijak-v1";
+const CACHE_NAME = "duit-bijak-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
