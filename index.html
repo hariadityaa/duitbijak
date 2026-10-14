@@ -891,10 +891,9 @@ let ui = {
 let periodCount = -1;
 function resetPeriod() {
   const n = appData.months.length;
-  if (n === periodCount) return;
+  if (n === periodCount || !n) return;
   periodCount = n;
-  ui.toIdx = Math.max(0, n - 1);
-  ui.fromIdx = Math.max(0, n - 3);
+  [ui.fromIdx, ui.toIdx] = presetRange("3m");
 }
 function applySnapshotMonths(rawMonths) {
   const byKey = {}; rawMonths.forEach(m => { byKey[m.month] = canonMonth(m); });
@@ -1510,8 +1509,13 @@ function periodMonths() {
   return { from, to, filtered: months.slice(from, to + 1) };
 }
 const PRESETS = [["3m", "3M"], ["6m", "6M"], ["ytd", "YTD"], ["all", "All"]];
+// Presets end at the latest full month, so a pending or partial month never
+// drags them. With no full month yet, fall back to the latest one.
 function presetRange(key) {
-  const months = appData.months, last = months.length - 1;
+  const months = appData.months;
+  let last = months.length - 1;
+  while (last > 0 && !isConfirmed(months[last])) last--;
+  if (!isConfirmed(months[last])) last = months.length - 1;
   if (key === "3m") return [Math.max(0, last - 2), last];
   if (key === "6m") return [Math.max(0, last - 5), last];
   if (key === "ytd") { const year = months[last].month.split(" ")[1]; return [months.findIndex(m => m.month.split(" ")[1] === year), last]; }
