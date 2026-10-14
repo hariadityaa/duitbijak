@@ -671,7 +671,7 @@ function oneOffModel() {
   rows.forEach((r, i) => { if (guesses[i] && !r.tx.spendType && !r.tx.suggestDismissed) suggestions.set(r.key, guesses[i]); });
   const flagged = rows.filter(r => SPEND_TYPES[r.tx.spendType]).map(r => ({ ...r, type: r.tx.spendType, life: DuitCategorise.spreadLife(r.tx) }));
   oneOffFor = appData.months; oneOffRules = appData.rules;
-  oneOff = { opexKeys, suggestions, flagged, core: new Map() };
+  oneOff = { rows, opexKeys, suggestions, flagged, core: new Map() };
   return oneOff;
 }
 // A month's op-ex categories with flagged rows taken out and spread shares put back.
@@ -1019,6 +1019,7 @@ function renderSheet() {
   else if (ui.sheet === "paste") { key = "paste"; title = "Paste or upload a table"; body = renderPastePanel(); }
   else if (ui.sheet === "month") { key = "month"; title = "Enter a month by hand"; body = renderAddMonth(); }
   else if (ui.sheet === "statements") { key = "statements"; title = "Statements"; body = renderStatements(); }
+  else if (ui.sheet === "review" && appData.months.length) { key = "review"; title = "One-offs to review"; body = renderReview(); }
   else if (ui.selectedCat && appData.months.length) {
     const { filtered } = periodMonths();
     const period = filtered.length > 1 ? `${filtered[0].month} – ${filtered[filtered.length - 1].month}` : filtered[0].month;
@@ -1473,12 +1474,17 @@ function renderOverview(filtered) {
   const prev = filtered.length > 1 ? filtered[filtered.length - 2] : null;
   const avgOpex = confirmed.length ? Math.round(totalOpex / confirmed.length) : null;
   const netAvgOpex = confirmed.length ? Math.round(netTotalOpex / confirmed.length) : null;
-  const latestMissing = missingCards(latest);
-  const delta = (prev && isConfirmed(prev) && isConfirmed(latest)) ? pct(opexAmount(latest), opexAmount(prev)) : null;
+  // The month card shows the latest confirmed month: the newest month is
+  // usually still waiting on a card statement, and a partial total misleads.
+  const shown = confirmed.length ? confirmed[confirmed.length - 1] : latest;
+  const shownPrev = confirmed.length > 1 ? confirmed[confirmed.length - 2] : null;
+  const delta = isConfirmed(shown) && shownPrev ? pct(opexAmount(shown), opexAmount(shownPrev)) : null;
   const tone = delta > 15 ? "warn" : delta < -15 ? "ok" : "";
-  const latestSub = !latest.cardSpendAvailable ? "no card stmt yet"
-    : latestMissing.length ? `partial: no ${latestMissing.map(sourceLabel).join(", ")} yet`
-    : delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—";
+  const shownMissing = missingCards(shown);
+  const later = filtered.slice(filtered.indexOf(shown) + 1).map(m => m.month.split(" ")[0]);
+  const latestSub = !shown.cardSpendAvailable ? "no card stmt yet"
+    : shownMissing.length ? `partial: no ${shownMissing.map(sourceLabel).join(", ")} yet`
+    : [delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs ${shownPrev.month.split(" ")[0]}` : null, later.length ? `${later.join(", ")} pending` : null].filter(Boolean).join(" · ") || "—";
   const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
   const inPeriod = new Set(filtered.map(m => m.month));
   const model = oneOffModel();
@@ -1566,8 +1572,8 @@ function renderOverview(filtered) {
   return `
   <div class="metrics">
     <div class="metric ${tone}">
-      <div class="metric-label">${esc(latest.month)} Core Op-Ex</div>
-      <div class="metric-value">${latest.cardSpendAvailable ? esc(fmt(opexAmount(latest))) : "Pending"}</div>
+      <div class="metric-label">${esc(shown.month)} Core Op-Ex</div>
+      <div class="metric-value">${shown.cardSpendAvailable ? esc(fmt(opexAmount(shown))) : "Pending"}</div>
       <div class="metric-sub">${esc(latestSub)}</div>
     </div>
     <div class="metric"><div class="metric-label">Core Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
@@ -1575,7 +1581,7 @@ function renderOverview(filtered) {
     <div class="metric"><div class="metric-label">Total out</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
     ${oneOffTotal || pendingSuggestions ? `<div class="metric wide"><div class="metric-label">One-offs</div>
       <div class="metric-value">${esc(fmt(oneOffTotal))}<small> &middot; ${esc(fmt(oneOffTotal / filtered.length))}/mo</small></div>
-      <div class="metric-sub">${oneOffByType.map(([t, v]) => `${esc(t)} ${esc(fmt(v))}`).join(" &middot; ") || "None flagged yet"}${pendingSuggestions ? ` &middot; <button class="link-btn" data-action="set-tab" data-tab="txns">${pendingSuggestions} to review</button>` : ""}</div></div>` : ""}
+      <div class="metric-sub">${oneOffByType.map(([t, v]) => `${esc(t)} ${esc(fmt(v))}`).join(" &middot; ") || "None flagged yet"}${pendingSuggestions ? ` &middot; <button class="link-btn" data-action="open-sheet" data-sheet="review">${pendingSuggestions} to review</button>` : ""}</div></div>` : ""}
   </div>
   <div class="card">
     <p class="card-title">Monthly spend pattern</p>
@@ -1721,6 +1727,18 @@ function renderAddMonth() {
     <div class="form-grid cols2">${catFields}</div>
     <div class="btn-row"><button class="btn primary" data-action="save-month">Save month</button></div>
   </div>`;
+}
+
+/* ============================== one-off review ============================== */
+// Only the suggested rows in the period, newest first. Confirmed or
+// dismissed rows drop off the list as they're saved.
+function renderReview() {
+  const model = oneOffModel();
+  const inPeriod = new Set(periodMonths().filtered.map(m => m.month));
+  const rows = model.rows.filter(r => inPeriod.has(r.month) && model.suggestions.has(r.key)).sort((a, b) => dateKey(b.date) - dateKey(a.date));
+  if (!rows.length) return `<p class="paste-help" style="margin:0;">Nothing left to review in this period.</p>`;
+  return `<p class="paste-help">Confirm to take a row out of core op-ex. Asset and prepaid rows are spread over their months. Tap a row to pick another type.</p>
+  ${rows.map(r => { const c = spendControls(r.key, r.tx); return `<div class="item-row"><span class="item-date">${esc(r.date)}</span><span class="item-desc" data-action="edit-spend" data-key="${esc(r.key)}">${esc(r.description)}</span><span class="item-amt">${esc(fmt(r.amount))}</span></div><div class="item-flags">${c.tag}</div>${c.editor}`; }).join("")}`;
 }
 
 /* ============================== transactions tab ============================== */
