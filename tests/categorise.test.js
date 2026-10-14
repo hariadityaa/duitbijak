@@ -3,7 +3,7 @@
 "use strict";
 const assert = require("assert");
 const { merchantKey, buildCategoryHistory, classifyOpex, resolveCategory, canonCategory, canonCategoryTotals,
-  suggestSpendTypes, spreadLife, monthShare } = require("../categorise.js");
+  suggestSpendTypes, spreadLife, monthShare, canonSpendType } = require("../categorise.js");
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
@@ -120,12 +120,13 @@ test("one-off suggestions: asset, prepaid, and a trip paid in pieces", () => {
   assert.deepStrictEqual(suggestSpendTypes([{ date: "01 Sep 2026", description: "FERRY CO", category: "Travel", amount: 499.99 }]), [null]);
 });
 
-test("one-off spreads: $2,050 over 36 months and $360 over 12", () => {
-  assert.strictEqual(spreadLife({ spendType: "asset" }), 36);
-  assert.strictEqual(spreadLife({ spendType: "asset", life: 24 }), 24);
+test("one-off spreads: only prepaid spreads; shares split evenly", () => {
+  assert.strictEqual(spreadLife({ spendType: "asset" }), 0);
+  assert.strictEqual(spreadLife({ spendType: "asset", life: 24 }), 0);
   assert.strictEqual(spreadLife({ spendType: "prepaid" }), 12);
   assert.strictEqual(spreadLife({ spendType: "exceptional" }), 0);
-  assert.strictEqual(spreadLife({ spendType: "capital", life: 120 }), 0);
+  assert.strictEqual(canonSpendType("capital"), "asset");
+  assert.strictEqual(canonSpendType("prepaid"), "prepaid");
   assert.strictEqual(spreadLife({}), 0);
   assert.strictEqual(Math.round(monthShare(2050, 36, "Aug 2026", "Aug 2026") * 100) / 100, 56.94);
   assert.strictEqual(Math.round(monthShare(2050, 36, "Aug 2026", "Jul 2029") * 100) / 100, 56.94);
