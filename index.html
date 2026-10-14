@@ -245,6 +245,7 @@
 <div id="toast-holder"></div>
 
 <script src="pdf-import.js"></script>
+<script src="categorise.js"></script>
 <script>
 (function(){
 "use strict";
@@ -255,9 +256,10 @@ const MONTH_ORDER = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct"
 
 const CATEGORY_FIELDS = [
   ["cat_shopping","Shopping/Online"], ["cat_dining","Dining & Food"], ["cat_transport","Transport"],
-  ["cat_sports","Sports/Padel"], ["cat_home","Home & Furniture"], ["cat_groceries","Groceries"],
+  ["cat_sports","Sports"], ["cat_home","Home & Furniture"], ["cat_groceries","Groceries"],
   ["cat_services","Services"], ["cat_electronics","Electronics"], ["cat_subscriptions","Subscriptions"],
-  ["cat_travel","Travel"], ["cat_fashion","Fashion"], ["cat_other","Other"],
+  ["cat_travel","Travel"], ["cat_fashion","Fashion"], ["cat_utilities","Utilities"], ["cat_convenience","Convenience Stores"],
+  ["cat_other","Other"],
 ];
 
 // No defaults here on purpose — this is a public template. Each visitor's
@@ -279,21 +281,7 @@ const OTHER_CATEGORY_WHITELIST = new Set([
   "IRAS Income Tax", "TMLS (Insurance/Tax)", "HDB Loan", "Family Support", "Reimbursement",
 ]);
 
-const OPEX_MATCH_RULES = [
-  { cat: "7-Eleven", match: /7[\s-]?ELEVEN/i },
-  { cat: "Transport - SMRT", match: /BUS\/MRT/i },
-  { cat: "Subscriptions", match: /Netflix|YOUTUBE|Grab\s*Subscription|AMZNPRIME|Amazon Prime|ANTHROPIC.*CLAUDE/i },
-  { cat: "Utilities", match: /SP Digital|STARHUB|\bGOMO\b|MyRepublic/i },
-  { cat: "Sports", match: /PLAYTOMIC|Anytime\s*Fitness|Padel|Badminton/i },
-  { cat: "Groceries", match: /\bNTUC\b|FAIRPRICE|COLD STORAGE|REDMART|NESPRESSO/i },
-  { cat: "Shopping/Online", match: /SHOPEE|LAZADA|AMAZON MKTPLC|\bSHEIN\b|UNIQLO|DECATHLON/i },
-  { cat: "Transport - Ride-Hail", match: /Grab\*|TADA Mobility|PAYPAL \*GOJEK/i },
-  { cat: "Electronics", match: /BEST DENKI|HARVEY NORMAN/i },
-  { cat: "Home & Furniture", match: /\bIKEA\b|\bMUJI\b|NIPPON HOME/i },
-  { cat: "Services", match: /URBANCOMPANY|AXS PTE LTD|HSBC LIFE|WHITECOATME/i },
-  { cat: "Travel", match: /FLYSCOOT|SCOOT PTE|BINTAN RESORT FERRIES|LOTTE DUTY FREE/i },
-  { cat: "Dining & Food", match: /SUBWAY|RAMEN|SUSHIRO|CAFE|BAKERY|BREADTALK|KITCHEN|BISTRO|PIZZ|KOPI/i },
-];
+// Category rules and history matching live in categorise.js.
 
 /* ============================== utilities ============================== */
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -372,10 +360,18 @@ function classifyFile(rows) {
   if (bank === "UOB") return "UOB Card";
   return "Unknown";
 }
-function classifyOpex(description) {
-  const hit = OPEX_MATCH_RULES.find(r => r.match.test(description || ""));
-  return hit ? hit.cat : "Uncategorized";
+// Rebuilt whenever appData.months is replaced, so a new import or sync
+// teaches the next guess. Only saved (hand-set or imported) labels count.
+let categoryHistoryFor = null, categoryHistory = new Map();
+function currentCategoryHistory() {
+  if (categoryHistoryFor !== appData.months) {
+    categoryHistoryFor = appData.months;
+    categoryHistory = DuitCategorise.buildCategoryHistory(appData.months.flatMap(m => m.transactions || []));
+  }
+  return categoryHistory;
 }
+const classifyOpex = description => DuitCategorise.classifyOpex(description, currentCategoryHistory());
+const resolveCategory = tx => DuitCategorise.resolveCategory(tx.description, tx.category, currentCategoryHistory());
 function monthKeyFromDate(dateStr) {
   const parts = dateStr.trim().split(" ");
   if (parts.length < 3) return null;
@@ -406,7 +402,7 @@ function buildMonths(cleanRows) {
       const giro = tx.type === "DR" ? GIRO_KEYWORDS.find(g => g.match.test(tx.description)) : null;
       if (giro) { giroOut += tx.amount; giroCategories[giro.key] += tx.amount; return; }
       if (tx.type === "CR") { if (SALARY_MATCH.test(tx.description)) salaryIn += tx.amount; else otherIn += tx.amount; return; }
-      const label = tx.category || classifyOpex(tx.description);
+      const label = resolveCategory(tx);
       if (label === "Credit Card Payment") return;
       if (OTHER_CATEGORY_WHITELIST.has(label)) { otherOut += tx.amount; otherCategories[label] = round2((otherCategories[label] || 0) + tx.amount); }
       else { cardSpend += tx.amount; categories[label] = round2((categories[label] || 0) + tx.amount); }
@@ -415,7 +411,7 @@ function buildMonths(cleanRows) {
     cardTxs.forEach(tx => {
       if (CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
       const signed = tx.type === "DR" ? tx.amount : -tx.amount;
-      const cat = tx.category || classifyOpex(tx.description);
+      const cat = resolveCategory(tx);
       if (cat === "Credit Card Payment") return;
       if (OTHER_CATEGORY_WHITELIST.has(cat)) { otherOut += signed; otherCategories[cat] = round2((otherCategories[cat] || 0) + signed); }
       else {
@@ -518,7 +514,7 @@ function opexLineItems(months, category) {
       if (isBank && tx.withdrawal == null) return;
       const amount = tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0);
       if (!amount) return;
-      const resolvedCat = tx.category || classifyOpex(tx.description);
+      const resolvedCat = resolveCategory(tx);
       if (resolvedCat !== category) return;
       rows.push({ ...tx, amount, month: m.month, guessed: !tx.category });
     });
@@ -543,10 +539,13 @@ function netOpexAmount(m) { const g = opexAmount(m); return g != null ? round2(g
 let dbApi = null;
 const docIdForMonth = month => month.replace(/\s+/g, "_");
 const docIdForCommitment = name => name.replace(/[^\w-]+/g, "_") || "item";
+// Months saved before a category rename still carry the old labels in their
+// totals. Fold them into the current ones as they load.
+const canonMonth = m => (m && m.categories ? { ...m, categories: DuitCategorise.canonCategoryTotals(m.categories) } : m);
 function loadLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) { const parsed = JSON.parse(raw); return { months: parsed.months || [], fixedCommitments: parsed.fixedCommitments || {} }; }
+    if (raw) { const parsed = JSON.parse(raw); return { months: (parsed.months || []).map(canonMonth), fixedCommitments: parsed.fixedCommitments || {} }; }
   } catch (e) {}
   return { months: [], fixedCommitments: {} };
 }
@@ -565,7 +564,7 @@ function resetPeriod() {
   ui.fromIdx = Math.max(0, n - 3);
 }
 function applySnapshotMonths(rawMonths) {
-  const byKey = {}; rawMonths.forEach(m => { byKey[m.month] = m; });
+  const byKey = {}; rawMonths.forEach(m => { byKey[m.month] = canonMonth(m); });
   appData.months = sortMonthKeys(Object.keys(byKey)).map(k => byKey[k]);
   resetPeriod();
   ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
