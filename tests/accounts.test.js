@@ -158,6 +158,27 @@ test("record ids sort account numbers and stay safe as doc ids", () => {
   assert.strictEqual(A.recordId("card-dbs", "Sep 2026"), "card-dbs|Sep_2026");
 });
 
+test("re-import keeps one-off flags; a CSV match carries flags but not categories", () => {
+  const saved = [
+    { date: "02 Aug 2026", account: "card-dbs-0001", description: "ACME PC PTE LTD", withdrawal: 2050, deposit: null, category: "Electronics", file: "dbs-aug.pdf", spendType: "asset", life: 24 },
+    { date: "10 Aug 2026", account: "card-dbs-0001", description: "ANNUAL FEE", withdrawal: 360, deposit: null, category: "", file: "dbs-aug.pdf", suggestDismissed: true },
+  ];
+  const incoming = [
+    { file: "dbs-aug.pdf", date: "02 Aug 2026", description: "ACME PC PTE LTD", amount: 2050, type: "DR", category: "", account: "card-dbs-0001" },
+    { file: "dbs-aug.pdf", date: "10 Aug 2026", description: "ANNUAL FEE", amount: 360, type: "DR", category: "", account: "card-dbs-0001" },
+  ];
+  const r = A.mergeMonth(saved, incoming, new Set(["dbs-aug.pdf"]));
+  assert.strictEqual(r.rows.length, 2);
+  assert.strictEqual(r.rows[0].spendType, "asset");
+  assert.strictEqual(r.rows[0].life, 24);
+  assert.strictEqual(r.rows[1].suggestDismissed, true);
+  assert.ok(!("spendType" in r.rows[1]));
+  const csv = [{ file: "x", date: "02 Aug 2026", description: "ACME PC PTE LTD", amount: 2050, type: "DR", category: "" }];
+  A.matchOldRows(csv, saved.map(A.txToRow), true);
+  assert.strictEqual(csv[0].spendType, "asset");
+  assert.strictEqual(csv[0].category, "");
+});
+
 let failed = 0;
 tests.forEach(([name, fn]) => {
   try { fn(); console.log("ok   " + name); }

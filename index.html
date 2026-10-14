@@ -148,6 +148,18 @@
   .tx-meta{ font-size:12px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tx-amt{ font-size:14px; font-weight:500; white-space:nowrap; flex-shrink:0; }
   .tx-amt.in{ color:var(--success); }
+  .tx-main[data-action], .item-desc[data-action]{ cursor:pointer; }
+  .tx-flags, .item-flags{ margin-top:4px; }
+  .item-flags{ padding-bottom:8px; }
+  .flag-tag{ font:inherit; font-size:12px; padding:0 8px; border-radius:var(--radius-full); border:1px solid var(--border-strong); background:transparent; color:var(--text); cursor:pointer; }
+  .suggest{ display:inline-flex; align-items:center; gap:8px; font-size:12px; color:var(--text-2); padding:0 0 0 8px; border:1px dashed var(--border-strong); border-radius:var(--radius-full); }
+  .link-btn{ font:inherit; font-size:12px; background:none; border:none; padding:2px 8px; color:var(--text); text-decoration:underline; cursor:pointer; }
+  .spend-editor{ padding:8px 0 12px; border-bottom:1px solid var(--border); }
+  .spend-editor .toggle-row{ margin-bottom:8px; }
+  .spend-life{ display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text-2); }
+  .spend-life input{ width:80px; }
+  .metric.wide{ grid-column:1 / -1; }
+  .metric-value small{ font-size:14px; font-weight:500; color:var(--text-2); }
 
   .btn{
     display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:500; line-height:1;
@@ -529,7 +541,7 @@ function buildMonths(cleanRows) {
     });
 
     const topMerchants = Object.entries(merchantTotals).filter(([, a]) => a > 0).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, amt]) => ({ name, amt }));
-    const allTx = txs.map(t => ({ date: t.date, account: t.account, description: t.description, withdrawal: t.type === "DR" ? t.amount : null, deposit: t.type === "CR" ? t.amount : null, category: t.category || null, file: t.file || null }))
+    const allTx = txs.map(t => ({ date: t.date, account: t.account, description: t.description, withdrawal: t.type === "DR" ? t.amount : null, deposit: t.type === "CR" ? t.amount : null, category: t.category || null, file: t.file || null, ...spendFlags(t) }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
     months[month] = {
@@ -548,7 +560,7 @@ function sortMonthKeys(keys) {
   });
 }
 function syncFromText(csvText) {
-  return syncFromRows(parseSheetTransactions(csvText));
+  return syncFromRows(keepSpendFlags(parseSheetTransactions(csvText)));
 }
 // Rows from the PDF parsers already know their account. Only rows without
 // one (CSV and paste) fall back to guessing it from descriptions, as an
@@ -573,6 +585,13 @@ function syncFromRows(rawRows) {
 // (accounts.js mergeMonth: same-file rows are replaced, older rows matched
 // one for one, categories carried over).
 const txToRow = DuitAccounts.txToRow;
+// A CSV or paste replaces whole months. One-off flags set in the app aren't in
+// the file, so carry them over from saved rows that match.
+function keepSpendFlags(rows) {
+  const flagged = appData.months.flatMap(m => (m.transactions || []).filter(tx => tx.spendType || tx.suggestDismissed).map(txToRow));
+  if (flagged.length) DuitAccounts.matchOldRows(rows, flagged, true);
+  return rows.map(({ matched, ...r }) => r);
+}
 function planImport(newRows) {
   const files = new Set(newRows.map(r => r.file));
   const existing = {}; appData.months.forEach(m => { existing[m.month] = m; });
@@ -601,7 +620,7 @@ function opexLineItems(months, category) {
   const rows = [];
   months.forEach(m => {
     if (!m.cardSpendAvailable) return;
-    (m.transactions || []).forEach(tx => {
+    (m.transactions || []).forEach((tx, i) => {
       if (rules.isTransfer(tx.description) || rules.isCardBill(tx.description) || rules.fixedBillFor(tx.description)) return;
       const isBank = isBankAccount(tx.account);
       if (isBank && tx.withdrawal == null) return;
@@ -609,13 +628,107 @@ function opexLineItems(months, category) {
       if (!amount) return;
       const resolvedCat = resolveCategory(tx);
       if (resolvedCat !== category) return;
-      rows.push({ ...tx, amount, month: m.month, guessed: !tx.category });
+      rows.push({ ...tx, amount, month: m.month, guessed: !tx.category, key: txKey(m.month, i) });
     });
   });
   return rows.sort((a, b) => b.amount - a.amount);
 }
+/* ============================== one-off spend ==============================
+   Rows flagged asset, prepaid or exceptional (see categorise.js). Saved month
+   totals stay cash. Core op-ex is worked out here: a flagged row leaves its
+   month, and an asset or prepaid row comes back as an even share in each
+   month it's spread over. Total Out stays cash. */
+const SPEND_TYPES = DuitCategorise.SPEND_TYPES;
+const FLAG_GROUPS = { asset: "Assets", prepaid: "Prepaid", exceptional: "Exceptional" };
+function spendFlags(t) {
+  const out = {};
+  if (SPEND_TYPES[t.spendType]) { out.spendType = t.spendType; if (Number(t.life) > 0) out.life = Number(t.life); }
+  if (t.suggestDismissed) out.suggestDismissed = true;
+  return out;
+}
+// What a saved row adds to its month's op-ex, mirroring buildMonths; null if it isn't op-ex.
+function opexRowAmount(tx, cat) {
+  const rules = currentRules();
+  if (cat === "Credit Card Payment" || rules.isOneOff(cat)) return null;
+  const row = { description: tx.description, type: tx.withdrawal != null ? "DR" : "CR" };
+  if (isCardAccount(tx.account)) return DuitRules.routeCardTx(row, rules).kind === "skip" ? null : (tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0));
+  if (isBankAccount(tx.account) && DuitRules.routeBankTx(row, rules).kind === "spend") return tx.withdrawal;
+  return null;
+}
+const txKey = (month, idx) => `${month}|${idx}`;
+// Rebuilt when the months or the rules are replaced.
+let oneOffFor = null, oneOffRules = null, oneOff = null;
+function oneOffModel() {
+  if (oneOff && oneOffFor === appData.months && oneOffRules === appData.rules) return oneOff;
+  const rows = [];
+  appData.months.forEach(m => (m.transactions || []).forEach((tx, i) => {
+    const cat = resolveCategory(tx), amount = opexRowAmount(tx, cat);
+    if (amount != null) rows.push({ key: txKey(m.month, i), month: m.month, tx, date: tx.date, description: tx.description, category: cat, amount });
+  }));
+  const guesses = DuitCategorise.suggestSpendTypes(rows);
+  const opexKeys = new Set(rows.map(r => r.key));
+  const suggestions = new Map();
+  rows.forEach((r, i) => { if (guesses[i] && !r.tx.spendType && !r.tx.suggestDismissed) suggestions.set(r.key, guesses[i]); });
+  const flagged = rows.filter(r => SPEND_TYPES[r.tx.spendType]).map(r => ({ ...r, type: r.tx.spendType, life: DuitCategorise.spreadLife(r.tx) }));
+  oneOffFor = appData.months; oneOffRules = appData.rules;
+  oneOff = { opexKeys, suggestions, flagged, core: new Map() };
+  return oneOff;
+}
+// A month's op-ex categories with flagged rows taken out and spread shares put back.
+function coreCategories(m) {
+  if (!m.cardSpendAvailable || !m.categories) return null;
+  const model = oneOffModel();
+  if (model.core.has(m.month)) return model.core.get(m.month);
+  const out = { ...m.categories };
+  const add = (cat, v) => { out[cat] = round2((out[cat] || 0) + v); };
+  model.flagged.forEach(r => {
+    if (r.month === m.month) add(r.category, -r.amount);
+    const share = DuitCategorise.monthShare(r.amount, r.life, r.month, m.month);
+    if (share) add(r.category, share);
+  });
+  model.core.set(m.month, out);
+  return out;
+}
+const coreAdjustment = m => { const core = coreCategories(m); return core ? Object.entries(core).reduce((s, [k, v]) => s + v - (m.categories[k] || 0), 0) : 0; };
+// Flagged rows' cash in a month, grouped by type, for the Other bucket.
+function flaggedCategories(m) {
+  const out = {};
+  oneOffModel().flagged.forEach(r => { if (r.month === m.month) out[FLAG_GROUPS[r.type]] = round2((out[FLAG_GROUPS[r.type]] || 0) + r.amount); });
+  return out;
+}
+// The tag or suggestion shown on an op-ex row, and its editor when open.
+function spendControls(key, tx) {
+  const model = oneOffModel();
+  if (!model.opexKeys.has(key)) return { tag: "", editor: "" };
+  const t = SPEND_TYPES[tx.spendType], life = DuitCategorise.spreadLife(tx);
+  const suggested = !t && model.suggestions.get(key);
+  const tag = t ? `<button class="flag-tag" data-action="edit-spend" data-key="${esc(key)}">${esc(t.label)}${life ? ` &middot; ${life} mo` : ""}</button>`
+    : suggested ? `<span class="suggest">One-off? ${esc(SPEND_TYPES[suggested].label)}
+        <button class="link-btn" data-action="confirm-spend" data-key="${esc(key)}" data-type="${suggested}">Confirm</button>
+        <button class="link-btn" data-action="dismiss-spend" data-key="${esc(key)}" aria-label="Dismiss suggestion">&times;</button></span>`
+    : "";
+  if (ui.editTx !== key) return { tag, editor: "" };
+  const opt = (type, label) => `<button class="btn small ${(tx.spendType || "") === type ? "on" : ""}" data-action="set-spend" data-key="${esc(key)}" data-type="${type}">${label}</button>`;
+  const editor = `<div class="spend-editor">
+    <div class="toggle-row">${opt("", "Normal")}${Object.keys(SPEND_TYPES).map(k => opt(k, SPEND_TYPES[k].label)).join("")}</div>
+    ${life ? `<label class="spend-life">Spread over <input type="number" inputmode="numeric" min="1" max="600" id="spend-life" data-key="${esc(key)}" value="${life}"> months</label>` : ""}
+  </div>`;
+  return { tag, editor };
+}
+// patch fields set to null are removed from the row.
+function saveSpend(key, patch) {
+  const sep = key.lastIndexOf("|"), month = key.slice(0, sep), idx = Number(key.slice(sep + 1));
+  const m = appData.months.find(x => x.month === month);
+  if (!m || !m.transactions || !m.transactions[idx]) return;
+  const tx = { ...m.transactions[idx], ...patch };
+  ["spendType", "life", "suggestDismissed"].forEach(f => { if (tx[f] == null) delete tx[f]; });
+  const transactions = m.transactions.slice();
+  transactions[idx] = tx;
+  persistMonths([{ ...m, transactions }]).then(() => render()).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
+}
 function ccpAdjustment(m) { const v = m.cardSpendAvailable && m.categories ? m.categories["Credit Card Payment"] : 0; return v ? -v : 0; }
-function opexAmount(m) { return m.cardSpendAvailable ? round2((m.cardSpend || 0) + ccpAdjustment(m)) : null; }
+// Core op-ex: one-offs out, spread shares in.
+function opexAmount(m) { return m.cardSpendAvailable ? round2((m.cardSpend || 0) + ccpAdjustment(m) + coreAdjustment(m)) : null; }
 function totalOutAdjusted(m) { return round2((m.totalOut || 0) + ccpAdjustment(m)); }
 function reimbursementAmount(m) { return (m.otherCategories && m.otherCategories["Reimbursement"]) || 0; }
 function netOpexAmount(m) { const g = opexAmount(m); return g != null ? round2(g - reimbursementAmount(m)) : null; }
@@ -656,8 +769,12 @@ let ui = {
   customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null,
   storage: "connecting", // "connecting" | "synced" | "local"
 };
+// Saving a flag rewrites a month but adds none, so the chosen period stays.
+let periodCount = -1;
 function resetPeriod() {
   const n = appData.months.length;
+  if (n === periodCount) return;
+  periodCount = n;
   ui.toIdx = Math.max(0, n - 1);
   ui.fromIdx = Math.max(0, n - 3);
 }
@@ -1340,8 +1457,8 @@ function renderEmptyState() {
 
 /* ============================== overview tab ============================== */
 function bucketSources(m, bucket) {
-  if (bucket === "opex") return m.cardSpendAvailable && m.categories ? [{ src: m.categories, tag: null }] : [];
-  return [{ src: m.giroCategories, tag: "Fixed" }, { src: m.otherCategories, tag: "One-off" }];
+  if (bucket === "opex") return m.cardSpendAvailable && m.categories ? [{ src: coreCategories(m), tag: null }] : [];
+  return [{ src: m.giroCategories, tag: "Fixed" }, { src: m.otherCategories, tag: "One-off" }, { src: flaggedCategories(m), tag: "Flagged" }];
 }
 function renderOverview(filtered) {
   const bucket = ui.bucketOverview;
@@ -1363,6 +1480,12 @@ function renderOverview(filtered) {
     : latestMissing.length ? `partial: no ${latestMissing.map(sourceLabel).join(", ")} yet`
     : delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—";
   const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
+  const inPeriod = new Set(filtered.map(m => m.month));
+  const model = oneOffModel();
+  const periodFlagged = model.flagged.filter(r => inPeriod.has(r.month));
+  const oneOffTotal = periodFlagged.reduce((s, r) => s + r.amount, 0);
+  const oneOffByType = Object.keys(FLAG_GROUPS).map(t => [SPEND_TYPES[t].label, periodFlagged.filter(r => r.type === t).reduce((s, r) => s + r.amount, 0)]).filter(([, v]) => v);
+  const pendingSuggestions = [...model.suggestions.keys()].filter(k => inPeriod.has(k.split("|")[0])).length;
 
   // Op-Ex per-month figures divide by confirmed months only, so a partial
   // month (a card statement still missing) doesn't pull the averages down.
@@ -1443,13 +1566,16 @@ function renderOverview(filtered) {
   return `
   <div class="metrics">
     <div class="metric ${tone}">
-      <div class="metric-label">${esc(latest.month)} Op-Ex</div>
+      <div class="metric-label">${esc(latest.month)} Core Op-Ex</div>
       <div class="metric-value">${latest.cardSpendAvailable ? esc(fmt(opexAmount(latest))) : "Pending"}</div>
       <div class="metric-sub">${esc(latestSub)}</div>
     </div>
-    <div class="metric"><div class="metric-label">Avg Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
-    <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">after reimbursements</div></div>
+    <div class="metric"><div class="metric-label">Core Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
+    <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">core, after reimbursements</div></div>
     <div class="metric"><div class="metric-label">Total out</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
+    ${oneOffTotal || pendingSuggestions ? `<div class="metric wide"><div class="metric-label">One-offs</div>
+      <div class="metric-value">${esc(fmt(oneOffTotal))}<small> &middot; ${esc(fmt(oneOffTotal / filtered.length))}/mo</small></div>
+      <div class="metric-sub">${oneOffByType.map(([t, v]) => `${esc(t)} ${esc(fmt(v))}`).join(" &middot; ") || "None flagged yet"}${pendingSuggestions ? ` &middot; <button class="link-btn" data-action="set-tab" data-tab="txns">${pendingSuggestions} to review</button>` : ""}</div></div>` : ""}
   </div>
   <div class="card">
     <p class="card-title">Monthly spend pattern</p>
@@ -1473,7 +1599,7 @@ function bucketToggle(stateKey, current) {
 /* ============================== deep dive tab ============================== */
 function renderDeepDive(filtered) {
   const bucket = ui.bucketDeep;
-  const bucketSrcs = m => bucket === "opex" ? (m.cardSpendAvailable && m.categories ? [m.categories] : []) : [m.giroCategories, m.otherCategories];
+  const bucketSrcs = m => bucket === "opex" ? (m.cardSpendAvailable && m.categories ? [coreCategories(m)] : []) : [m.giroCategories, m.otherCategories, flaggedCategories(m)];
   const totals = {};
   filtered.forEach(m => bucketSrcs(m).forEach(src => { if (src) Object.entries(src).forEach(([k, v]) => { if (k === "Credit Card Payment") return; if (v) totals[k] = (totals[k] || 0) + v; }); }));
   const cats = Object.entries(totals).sort((a, b) => b[1] - a[1]);
@@ -1512,9 +1638,10 @@ function renderDeepDive(filtered) {
   const ranked = Object.entries(merchTotals).sort((a, b) => b[1] - a[1]).slice(0, 12);
   const merchMax = ranked[0] ? ranked[0][1] : 1;
   const merchPeriod = merchMonths.length ? `${merchMonths[0].month} – ${merchMonths[merchMonths.length - 1].month}` : "—";
+  const flaggedNames = new Set(oneOffModel().flagged.filter(r => merchMonths.some(m => m.month === r.month)).map(r => r.description));
   const merchRows = ranked.map(([name, total]) => `
     <div class="row2">
-      <div class="row2-top"><span class="row2-name">${esc(name)}</span><span class="row2-amt">${esc(fmt(total))}</span></div>
+      <div class="row2-top"><span class="row2-name">${esc(name)}${flaggedNames.has(name) ? '<span class="tag">Flagged</span>' : ""}</span><span class="row2-amt">${esc(fmt(total))}</span></div>
       <div class="row2-bottom"><div class="row2-bar"><div class="row2-bar-fill" style="width:${(total / merchMax * 100).toFixed(0)}%;background:var(--text)"></div></div>
       ${merchAvgMonths.length > 1 ? `<span class="row2-total">${esc(fmt(Math.round((merchAvgTotals[name] || 0) / merchAvgMonths.length)))}/mo</span>` : ""}</div>
     </div>`).join("");
@@ -1567,7 +1694,8 @@ function renderItemized(filtered, cat) {
       <span>${items.length} matching transaction${items.length === 1 ? "" : "s"} &middot; total ${esc(fmt(total))}${items.length > 50 ? " &middot; showing top 50" : ""}</span>
     </div>
     <div style="font-size:14px;color:var(--text-2);margin-bottom:8px;">Rows marked ~ are guessed from the description, not the original manual tag — may not exactly reconcile with the total above.</div>
-    ${top.map(tx => `<div class="item-row"><span class="item-date">${esc(tx.date)}</span><span class="item-desc">${tx.guessed ? '<span class="guess">~ </span>' : ""}${esc(tx.description)}</span><span class="item-amt" style="color:${tx.amount < 0 ? "var(--success)" : "var(--text)"}">${tx.amount < 0 ? "−" : ""}${esc(fmt(Math.abs(tx.amount)))}</span></div>`).join("")}
+    ${items.some(tx => tx.spendType) ? `<div style="font-size:14px;color:var(--text-2);margin-bottom:8px;">Flagged rows show what was paid. Core op-ex leaves exceptional rows out and spreads asset and prepaid rows over their months.</div>` : ""}
+    ${top.map(tx => { const c = spendControls(tx.key, tx); return `<div class="item-row"><span class="item-date">${esc(tx.date)}</span><span class="item-desc" data-action="edit-spend" data-key="${esc(tx.key)}">${tx.guessed ? '<span class="guess">~ </span>' : ""}${esc(tx.description)}</span><span class="item-amt" style="color:${tx.amount < 0 ? "var(--success)" : "var(--text)"}">${tx.amount < 0 ? "−" : ""}${esc(fmt(Math.abs(tx.amount)))}</span></div>${c.tag ? `<div class="item-flags">${c.tag}</div>` : ""}${c.editor}`; }).join("")}
   </div>`;
 }
 
@@ -1609,7 +1737,7 @@ function renderTxns() {
 }
 function renderTxList() {
   const q = (ui.txQuery || "").trim().toLowerCase();
-  const all = periodMonths().filtered.flatMap(m => (m.transactions || []).map(tx => ({ ...tx, cat: resolveCategory(tx) })))
+  const all = periodMonths().filtered.flatMap(m => (m.transactions || []).map((tx, i) => ({ ...tx, cat: resolveCategory(tx), key: txKey(m.month, i) })))
     .filter(tx => !(ui.hideIncome && tx.deposit != null && currentRules().isSalary(tx.description)))
     .filter(tx => !q || [tx.description, tx.cat, accountLabel(tx.account)].some(v => String(v || "").toLowerCase().includes(q)))
     .sort((a, b) => dateKey(b.date) - dateKey(a.date));
@@ -1621,10 +1749,12 @@ function renderTxList() {
     const head = tx.date !== day ? `<div class="tx-day">${esc(tx.date)}</div>` : "";
     day = tx.date;
     const isIn = tx.deposit != null;
+    const c = spendControls(tx.key, tx);
+    const editable = oneOffModel().opexKeys.has(tx.key);
     return `${head}<div class="tx-row">
-      <div class="tx-main"><div class="tx-desc">${esc(tx.description)}</div><div class="tx-meta">${esc(tx.cat)} &middot; ${esc(accountLabel(tx.account))}</div></div>
+      <div class="tx-main" ${editable ? `data-action="edit-spend" data-key="${esc(tx.key)}"` : ""}><div class="tx-desc">${esc(tx.description)}</div><div class="tx-meta">${esc(tx.cat)} &middot; ${esc(accountLabel(tx.account))}</div>${c.tag ? `<div class="tx-flags">${c.tag}</div>` : ""}</div>
       <span class="tx-amt ${isIn ? "in" : ""}">${isIn ? "+" : ""}${esc(fmt(isIn ? tx.deposit : tx.withdrawal))}</span>
-    </div>`;
+    </div>${c.editor}`;
   }).join("");
   return `<div class="tx-summary">${all.length} transaction${all.length !== 1 ? "s" : ""} &middot; out ${esc(fmt(out))}${ui.hideIncome ? "" : ` &middot; in ${esc(fmt(inn))}`}</div>
   ${rows}
@@ -1694,6 +1824,10 @@ let fabHidden = false;
 function onChange(e) {
   const t = e.target;
   if (t.id === "from-select") { ui.fromIdx = Number(t.value); if (ui.fromIdx > ui.toIdx) ui.toIdx = ui.fromIdx; render(); }
+  else if (t.id === "spend-life") {
+    const life = Math.round(Number(t.value));
+    if (life >= 1 && life <= 600) saveSpend(t.getAttribute("data-key"), { life }); else render();
+  }
   else if (t.id === "to-select") { ui.toIdx = Number(t.value); if (ui.toIdx < ui.fromIdx) ui.fromIdx = ui.toIdx; render(); }
   else if (t.id === "csv-file-input") {
     const file = t.files && t.files[0];
@@ -1746,7 +1880,15 @@ function onClick(e) {
     if (btn.classList.contains("sheet-backdrop") && e.target !== btn) return;
     ui.sheet = null; ui.keyTest = null; ui.selectedCat = null; render();
   }
-  else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; ui.txLimit = 0; render(); window.scrollTo(0, 0); }
+  else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; ui.txLimit = 0; ui.editTx = null; render(); window.scrollTo(0, 0); }
+  else if (action === "edit-spend") { const k = btn.getAttribute("data-key"); ui.editTx = ui.editTx === k ? null : k; render(); }
+  else if (action === "confirm-spend") saveSpend(btn.getAttribute("data-key"), { spendType: btn.getAttribute("data-type"), life: null });
+  else if (action === "dismiss-spend") saveSpend(btn.getAttribute("data-key"), { suggestDismissed: true });
+  else if (action === "set-spend") {
+    const type = btn.getAttribute("data-type");
+    // Choosing Normal also stops the row being suggested again.
+    saveSpend(btn.getAttribute("data-key"), type ? { spendType: type, life: null } : { spendType: null, life: null, suggestDismissed: true });
+  }
   else if (action === "open-add") { ui.sheet = "add"; ui.selectedCat = null; ui.syncError = null; render(); }
   else if (action === "open-sheet") {
     ui.sheet = btn.getAttribute("data-sheet"); render();

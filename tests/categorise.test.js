@@ -2,7 +2,8 @@
 // lines, made-up merchants, refs and amounts. Run: node tests/categorise.test.js
 "use strict";
 const assert = require("assert");
-const { merchantKey, buildCategoryHistory, classifyOpex, resolveCategory, canonCategory, canonCategoryTotals } = require("../categorise.js");
+const { merchantKey, buildCategoryHistory, classifyOpex, resolveCategory, canonCategory, canonCategoryTotals,
+  suggestSpendTypes, spreadLife, monthShare } = require("../categorise.js");
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
@@ -72,6 +73,39 @@ test("month totals fold old labels together", () => {
     canonCategoryTotals({ "Transport - SMRT": 10.1, "Transport - Ride-Hail": 5.2, "Transport": 1, "7-Eleven": 3, "Groceries": 4 }),
     { "Transport": 16.3, "Convenience Stores": 3, "Groceries": 4 });
   assert.strictEqual(canonCategoryTotals(null), null);
+});
+
+test("one-off suggestions: asset, prepaid, and a trip paid in pieces", () => {
+  const rows = [
+    { date: "02 Aug 2026", description: "ACME PC PTE LTD", category: "Electronics", amount: 2050 },
+    { date: "03 Aug 2026", description: "USB CABLE SHOP", category: "Electronics", amount: 15 },
+    { date: "05 Aug 2026", description: "SOFA WORLD", category: "Home & Furniture", amount: 500 },
+    { date: "10 Aug 2026", description: "ANNUAL FEE", category: "Subscriptions", amount: 196.2 },
+    { date: "12 Aug 2026", description: "FAKE AIR BOOKING", category: "Travel", amount: 800 },
+    { date: "14 Aug 2026", description: "FAKE HOTELS", category: "Travel", amount: 220 },
+    { date: "16 Aug 2026", description: "FERRY CO", category: "Travel", amount: 60 },
+    { date: "12 Aug 2026", description: "FAKE AIR REFUND", category: "Travel", amount: -800 },
+    { date: "20 Aug 2026", description: "BIG GROCER", category: "Groceries", amount: 900 },
+  ];
+  assert.deepStrictEqual(suggestSpendTypes(rows),
+    ["asset", null, "asset", "prepaid", "exceptional", "exceptional", null, null, null]);
+  assert.deepStrictEqual(suggestSpendTypes([{ date: "01 Sep 2026", description: "FERRY CO", category: "Travel", amount: 499.99 }]), [null]);
+});
+
+test("one-off spreads: $2,050 over 36 months and $360 over 12", () => {
+  assert.strictEqual(spreadLife({ spendType: "asset" }), 36);
+  assert.strictEqual(spreadLife({ spendType: "asset", life: 24 }), 24);
+  assert.strictEqual(spreadLife({ spendType: "prepaid" }), 12);
+  assert.strictEqual(spreadLife({ spendType: "exceptional" }), 0);
+  assert.strictEqual(spreadLife({}), 0);
+  assert.strictEqual(Math.round(monthShare(2050, 36, "Aug 2026", "Aug 2026") * 100) / 100, 56.94);
+  assert.strictEqual(Math.round(monthShare(2050, 36, "Aug 2026", "Jul 2029") * 100) / 100, 56.94);
+  assert.strictEqual(monthShare(2050, 36, "Aug 2026", "Aug 2029"), 0);
+  assert.strictEqual(monthShare(2050, 36, "Aug 2026", "Jul 2026"), 0);
+  assert.strictEqual(monthShare(360, 12, "Dec 2026", "Jan 2027"), 30);
+  let sum = 0;
+  for (let k = 0; k < 40; k++) sum += monthShare(2050, 36, "Aug 2026", ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][(7 + k) % 12] + " " + (2026 + Math.floor((7 + k) / 12)));
+  assert.ok(Math.abs(sum - 2050) < 1e-6);
 });
 
 let failed = 0;

@@ -97,7 +97,72 @@ function canonCategoryTotals(totals) {
   return out;
 }
 
-const api = { CATEGORY_ALIASES, OPEX_MATCH_RULES, canonCategory, merchantKey, buildCategoryHistory, classifyOpex, resolveCategory, canonCategoryTotals };
+/* One-off spend, classed by what it buys rather than by size alone:
+   asset (lasts years, spread over its life), prepaid (covers a coming period,
+   spread over it) and exceptional (kept out of core op-ex, shown on its own).
+   The size threshold only decides what gets suggested. */
+const ONE_OFF_THRESHOLD = 500;
+const TRAVEL_CLUSTER_DAYS = 3;
+const SPEND_TYPES = {
+  asset: { label: "Asset", life: 36 },
+  prepaid: { label: "Prepaid", life: 12 },
+  exceptional: { label: "Exceptional", life: 0 },
+};
+const ASSET_CATEGORIES = new Set(["Electronics", "Home & Furniture"]);
+const PREPAID_MATCH = /ANNUAL FEE|CARD MEMBERSHIP|CARD FEE/i;
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// "12 Sep 2026" -> days since 1970; null when unreadable.
+function dayNumber(date) {
+  const [d, mon, y] = String(date || "").trim().split(/\s+/);
+  const mi = MONTHS.indexOf(mon);
+  if (mi < 0 || !Number(d) || !Number(y)) return null;
+  return Date.UTC(Number(y), mi, Number(d)) / 86400000;
+}
+// "Sep 2026" -> a running month count, so months subtract.
+function monthNumber(month) {
+  const [mon, y] = String(month || "").trim().split(/\s+/);
+  const mi = MONTHS.indexOf(mon);
+  return mi < 0 || !Number(y) ? null : Number(y) * 12 + mi;
+}
+
+// rows: op-ex rows { date, description, category, amount }, amount > 0 for spend.
+// Returns a suggested type (or null) per row. A trip paid in pieces is caught
+// by taking any Travel row within a few days of a big Travel row.
+function suggestSpendTypes(rows) {
+  const anchors = (rows || []).filter(r => r.category === "Travel" && r.amount >= ONE_OFF_THRESHOLD)
+    .map(r => dayNumber(r.date)).filter(d => d != null);
+  return (rows || []).map(r => {
+    if (!(r.amount > 0)) return null;
+    if (PREPAID_MATCH.test(r.description || "")) return "prepaid";
+    if (ASSET_CATEGORIES.has(r.category) && r.amount >= ONE_OFF_THRESHOLD) return "asset";
+    if (r.category === "Travel") {
+      const d = dayNumber(r.date);
+      if (d != null && anchors.some(a => Math.abs(a - d) <= TRAVEL_CLUSTER_DAYS)) return "exceptional";
+    }
+    return null;
+  });
+}
+
+// Months a flagged row is spread over: 0 for exceptional or unflagged.
+function spreadLife(tx) {
+  const t = tx && SPEND_TYPES[tx.spendType];
+  if (!t || !t.life) return 0;
+  const life = Math.round(Number(tx.life));
+  return life > 0 ? life : t.life;
+}
+
+// The part of `amount`, bought in `fromMonth` and spread over `life` months,
+// that falls in `month`. The purchase month takes the first share.
+function monthShare(amount, life, fromMonth, month) {
+  const a = monthNumber(fromMonth), b = monthNumber(month);
+  if (!life || a == null || b == null) return 0;
+  const k = b - a;
+  return k >= 0 && k < life ? amount / life : 0;
+}
+
+const api = { CATEGORY_ALIASES, OPEX_MATCH_RULES, canonCategory, merchantKey, buildCategoryHistory, classifyOpex, resolveCategory, canonCategoryTotals,
+  ONE_OFF_THRESHOLD, SPEND_TYPES, suggestSpendTypes, spreadLife, monthShare, dayNumber, monthNumber };
 if (typeof module === "object" && module.exports) module.exports = api;
 else root.DuitCategorise = api;
 })(typeof self !== "undefined" ? self : this);

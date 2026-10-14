@@ -177,21 +177,30 @@ function migrate(data) {
 // bank-posb-6789. Description goes first because older CSV imports could
 // mislabel the account; digits are ignored because older imports stripped
 // merchant numbers. A matched row passes its category on, so hand-set
-// categories survive a re-import.
+// categories survive a re-import. One-off flags set in the app (spendType,
+// life, suggestDismissed) travel the same way.
+const SPEND_FLAGS = ["spendType", "life", "suggestDismissed"];
+function copySpendFlags(from, to) {
+  if (to.spendType || to.suggestDismissed) return to;
+  SPEND_FLAGS.forEach(f => { if (from[f] != null) to[f] = from[f]; });
+  return to;
+}
 function txToRow(tx) {
   const isDr = tx.withdrawal != null;
-  return { file: tx.file || "", date: tx.date, description: tx.description, amount: isDr ? tx.withdrawal : (tx.deposit || 0), type: isDr ? "DR" : "CR", category: tx.category || "", account: tx.account };
+  return copySpendFlags(tx, { file: tx.file || "", date: tx.date, description: tx.description, amount: isDr ? tx.withdrawal : (tx.deposit || 0), type: isDr ? "DR" : "CR", category: tx.category || "", account: tx.account });
 }
 const descKey = d => String(d || "").toUpperCase().replace(/[\d\s]+/g, "");
 const sameAmount = (a, b) => a.date === b.date && a.type === b.type && Math.abs(a.amount - b.amount) < 0.005;
-function matchOldRows(incoming, pool) {
+// flagsOnly: carry one-off flags but not categories (a CSV brings its own).
+function matchOldRows(incoming, pool, flagsOnly) {
   const tiers = [(o, r) => descKey(o.description) === descKey(r.description), (o, r) => sourceOf(o.account) === sourceOf(r.account)];
   tiers.forEach(same => incoming.forEach(r => {
     if (r.matched) return;
     const old = pool.find(o => !o.matched && sameAmount(o, r) && same(o, r));
     if (!old) return;
     old.matched = r.matched = true;
-    if (!r.category && old.category) r.category = old.category;
+    if (!flagsOnly && !r.category && old.category) r.category = old.category;
+    copySpendFlags(old, r);
   }));
 }
 // savedTxs: one month's saved transactions. incoming: new rows for that
@@ -212,7 +221,7 @@ function mergeMonth(savedTxs, incoming, files) {
 }
 
 const api = { KINDS, LEGACY, slug, last4, sourceId, accountId, parseId, kindOf, sourceOf, defaultName, makeAccount,
-  accountFor, accountName, sourceAccounts, sourceName, sourceHidden, register, isLegacy, fromLegacy, recordId, migrate, txToRow, matchOldRows, mergeMonth };
+  accountFor, accountName, sourceAccounts, sourceName, sourceHidden, register, isLegacy, fromLegacy, recordId, migrate, txToRow, matchOldRows, mergeMonth, copySpendFlags };
 if (typeof module === "object" && module.exports) module.exports = api;
 else root.DuitAccounts = api;
 })(typeof self !== "undefined" ? self : this);
