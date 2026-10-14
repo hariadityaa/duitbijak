@@ -277,8 +277,6 @@
   .drill-list .item-date{ min-width:48px; }
   .drill-month{ display:flex; justify-content:space-between; font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; padding:16px 0 4px; border-bottom:1px solid var(--border); }
 
-  .trend-cell{ display:flex; align-items:flex-end; gap:4px; height:24px; min-width:60px; }
-  .trend-cell .bar{ width:6px; border-radius:2px 2px 0 0; min-height:2px; flex-shrink:0; }
 
   .items{ padding:0; }
   .item-row{ display:flex; align-items:baseline; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; }
@@ -853,7 +851,7 @@ function saveLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ap
 let appData = emptyData();
 let ui = {
   tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true,
-  bucketOverview: "opex", bucketDeep: "opex",
+  bucketOverview: "opex",
   drill: [], drillSort: "date", // drill-down sheets, top last: { kind: "month" | "cat", bucket, month, cat }
   sheet: null, // null | "add" | "paste" | "month" | "settings" | "rules" | "suggest" | "statements" | "accounts"
   rulesDraft: null, suggestions: null, // rule edits wait here until saved
@@ -1065,13 +1063,6 @@ function stackedBar(entries, total, colorOf, segAttrs) {
     return `<div class="seg" style="width:${w}%;background:${colorOf(name)}" title="${esc(name)}: ${esc(fmt(val))}" ${segAttrs ? segAttrs(name) : ""}></div>`;
   }).join("");
   return `<div class="stacked-bar">${segs}</div>`;
-}
-function trendCell(values, max) {
-  const bars = values.map(v => {
-    const h = max > 0 ? Math.max(2, Math.round(v / max * 22)) : 2;
-    return `<div class="bar" style="height:${h}px;background:${v > 0 ? "var(--text-2)" : "var(--border)"}"></div>`;
-  }).join("");
-  return `<div class="trend-cell">${bars}</div>`;
 }
 
 /* ============================== render: shell ============================== */
@@ -1622,6 +1613,8 @@ function renderOverview(filtered) {
   const prev = filtered.length > 1 ? filtered[filtered.length - 2] : null;
   const avgOpex = confirmed.length ? Math.round(totalOpex / confirmed.length) : null;
   const netAvgOpex = confirmed.length ? Math.round(netTotalOpex / confirmed.length) : null;
+  // Net Op-Ex equals Core Op-Ex until something is reimbursed, so it only shows then.
+  const hasReimb = confirmed.some(m => reimbursementAmount(m));
   // The month card shows the latest confirmed month: the newest month is
   // usually still waiting on a card statement, and a partial total misleads.
   const shown = confirmed.length ? confirmed[confirmed.length - 1] : latest;
@@ -1728,8 +1721,8 @@ function renderOverview(filtered) {
       <div class="metric-sub">${esc(latestSub)}</div>
     </div>
     <div class="metric"><div class="metric-label">Core Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
-    <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">core, after reimbursements</div></div>
-    <div class="metric clickable" role="button" tabindex="0" data-action="show-txns"><div class="metric-label">Total out${CHEV}</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
+    ${hasReimb ? `<div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">core, after reimbursements</div></div>` : ""}
+    <div class="metric clickable${hasReimb ? "" : " wide"}" role="button" tabindex="0" data-action="show-txns"><div class="metric-label">Total out${CHEV}</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
     ${ui.hideIncome ? "" : `<div class="metric wide"><div class="metric-label">Savings / mo</div><div class="metric-value">${esc(fmt(totalSavings / filtered.length))}</div><div class="metric-sub">${esc(savingsSub)}</div></div>`}
     ${oneOffTotal || pendingSuggestions ? `<div class="metric wide ${pendingSuggestions ? "clickable" : ""}" ${pendingSuggestions ? 'role="button" tabindex="0" data-action="open-sheet" data-sheet="review"' : ""}><div class="metric-label">One-offs${pendingSuggestions ? CHEV : ""}</div>
       <div class="metric-value">${esc(fmt(oneOffTotal))}<small> &middot; ${esc(fmt(oneOffTotal / filtered.length))}/mo</small></div>
@@ -1756,36 +1749,7 @@ function bucketToggle(stateKey, current) {
 
 /* ============================== deep dive tab ============================== */
 function renderDeepDive(filtered) {
-  const bucket = ui.bucketDeep;
-  const bucketSrcs = m => bucket === "opex" ? (m.cardSpendAvailable && m.categories ? [coreCategories(m)] : []) : [m.giroCategories, m.otherCategories, flaggedCategories(m)];
-  const totals = {};
-  filtered.forEach(m => bucketSrcs(m).forEach(src => { if (src) Object.entries(src).forEach(([k, v]) => { if (k === "Credit Card Payment") return; if (v) totals[k] = (totals[k] || 0) + v; }); }));
-  const cats = Object.entries(totals).sort((a, b) => b[1] - a[1]);
-  const colorOf = colorMap(cats.map(([c]) => c));
-  const maxCat = cats.reduce((m, [, v]) => Math.max(m, v), 0);
-  const trendMonths = bucket === "opex" ? filtered.filter(m => m.cardSpendAvailable && m.categories) : filtered;
-  // "/mo" divides by confirmed months only; a partial month stays in the total and trend.
-  const avgMonths = bucket === "opex" ? trendMonths.filter(isConfirmed) : filtered;
-  const avgOf = cat => avgMonths.reduce((s, m) => s + bucketSrcs(m).reduce((t, src) => t + ((src || {})[cat] || 0), 0), 0) / avgMonths.length;
-  const globalMax = Math.max(1, ...cats.map(([c]) => Math.max(...trendMonths.map(m => bucketSrcs(m).reduce((s, src) => s + ((src || {})[c] || 0), 0)), 0)));
-
-  const catRows = cats.map(([cat, total]) => {
-    const monthVals = trendMonths.map(m => bucketSrcs(m).reduce((s, src) => s + ((src || {})[cat] || 0), 0));
-    const barPct = total > 0 && maxCat > 0 ? (total / maxCat * 100).toFixed(0) : "0";
-    return `<div class="row2 clickable" ${drillAttrs("drill-cat", { cat, bucket })}>
-      <div class="row2-top">
-        <span class="swatch" style="background:${colorOf(cat)}"></span>
-        <span class="row2-name">${esc(cat)}</span>
-        ${trendCell(monthVals, globalMax)}
-        <span class="row2-amt">${esc(fmt(total))}</span>${CHEV}
-      </div>
-      <div class="row2-bottom">
-        <div class="row2-bar"><div class="row2-bar-fill" style="width:${barPct}%;background:${colorOf(cat)}"></div></div>
-        ${avgMonths.length > 1 ? `<span class="row2-total">${esc(fmt(avgOf(cat)))}/mo</span>` : ""}
-      </div>
-    </div>`;
-  }).join("");
-
+  // Categories live on Overview, where a row opens its sheet with the month trend.
   const merchMonths = filtered.filter(m => m.cardSpendAvailable && m.topMerchants && m.topMerchants.length);
   const merchAvgMonths = merchMonths.filter(isConfirmed);
   const merchTotals = {}; const merchAvgTotals = {};
@@ -1803,11 +1767,6 @@ function renderDeepDive(filtered) {
     </div>`).join("");
 
   return `
-  <div class="card">
-    <p class="card-title">Category breakdown</p>
-    ${bucketToggle("bucketDeep", bucket)}
-    ${cats.length === 0 ? `<div style="font-size:14px;color:var(--text-2);padding:8px 0;">No data for this view.</div>` : catRows}
-  </div>
   ${merchMonths.length ? `<div class="card"><p class="card-title">Top merchants &middot; ${esc(merchPeriod)} &middot; credit cards</p>
     <div style="font-size:14px;color:var(--text-2);margin-bottom:12px;">Credit cards only. Debit, NETS and PayNow aren't counted here.</div>
     ${merchRows}</div>` : ""}
@@ -2279,7 +2238,7 @@ function onClick(e) {
     if (ui.confirmClear) {
       const storage = ui.storage;
       clearAllData().then(() => {
-        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", bucketDeep: "opex", drill: [], drillSort: "date", sheet: null, customPeriod: false, txQuery: "", txFilter: null, txLimit: 0, syncError: null, lastSynced: null, storage };
+        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", drill: [], drillSort: "date", sheet: null, customPeriod: false, txQuery: "", txFilter: null, txLimit: 0, syncError: null, lastSynced: null, storage };
         showToast("Data cleared.");
         render();
       }).catch(err => { ui.syncError = "Couldn't clear data: " + err.message; render(); });
