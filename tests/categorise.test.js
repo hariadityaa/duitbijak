@@ -60,6 +60,34 @@ test("rules: agreed labels and new merchants", () => {
   cases.forEach(([d, want]) => assert.strictEqual(classifyOpex(d), want, d));
 });
 
+test("rules: investments, insurance, remittance and people stay out of Uncategorized", () => {
+  const cases = [
+    ["Inward DR - GIRO COLL P0000001 IFAST FINANCIAL PL-C P0000001", "Investment"],
+    ["FAST Collection U12345678.1000001 ABCDEF100000000xyz000 Other", "Investment"],
+    ["Payments / Collections via GIRO TMLS 00000001 00000002", "Insurance"],
+    ["Misc DR-Debit Card 01 APR 1234 5678901 INCOME 12345678 Singapore SG", "Insurance"],
+    ["Inward Debit-FAST OTHR 000001 WISE ASIA-PACIFIC PT 1000000001", "Remittance"],
+    ["PAYNOW-FAST PIB2601010000000001 JANE DOE OTHR Transfer - Mobile", "PayNow to people"],
+    ["PAYNOW-FAST MX JOHXX SMXXX MBK2601010000000001", "PayNow to people"],
+    ["PAYNOW-FAST PIB2601010000000001 ACME RESTAURA OTHR QSQRCODE", "Dining & Food"],
+    ["Google SomeGame SINGAPORE", "Entertainment"],
+    ["GOOGLE ONE SINGAPORE", "Subscriptions"],
+    ["CENTRAL 24-HR CLINIC (BED NETS", "Health"],
+    ["GAIN CITY BEST-ELECTRI", "Electronics"],
+    ["NITORI - SOME MALL SINGAPORE", "Home & Furniture"],
+    ["SHELL SOMEROAD SINGAPORE", "Transport"],
+  ];
+  cases.forEach(([d, want]) => assert.strictEqual(classifyOpex(d), want, d));
+});
+
+test("merchant key keeps the payee on PayNow, GIRO and NETS QR rows", () => {
+  assert.strictEqual(merchantKey("PAYNOW-FAST ACME DESIGN PRIVATE LI MBK2601010000000001"), "ACME DESIGN");
+  assert.strictEqual(merchantKey("PAYNOW-FAST PIB2601010000000001 ACME DESIGN PRIVATE LI"), "ACME DESIGN");
+  assert.strictEqual(merchantKey("PAYNOW-FAST MX JOHXX SMXXX MBK2601010000000001"), "JOHXX SMXXX");
+  assert.strictEqual(merchantKey("Payments / Collections via GIRO ACMEINS 00000001"), "ACMEINS");
+  assert.strictEqual(merchantKey("Point-of-Sale Transaction NETS QR PAYMENT 600000000000000 TO: ACME STALL"), merchantKey("NETS Debit-Consumer ACME STALL 12345678 xxxxxx0000"));
+});
+
 test("saved label wins over a guess, and is canonicalised", () => {
   assert.strictEqual(resolveCategory("BUS/MRT SINGAPORE", "Transport - SMRT"), "Transport");
   assert.strictEqual(resolveCategory("SHOPEE SINGAPORE MP", "Home & Furniture"), "Home & Furniture");

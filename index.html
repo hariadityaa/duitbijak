@@ -156,6 +156,8 @@
   .link-btn{ font:inherit; font-size:12px; background:none; border:none; padding:2px 8px; color:var(--text); text-decoration:underline; cursor:pointer; }
   .spend-editor{ padding:8px 0 12px; border-bottom:1px solid var(--border); }
   .spend-editor .toggle-row{ margin-bottom:8px; }
+  .spend-cat{ display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text-2); margin-bottom:8px; }
+  .spend-cat select{ flex:1; min-width:0; }
   .spend-life{ display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text-2); }
   .spend-life input{ width:80px; }
   .metric.wide{ grid-column:1 / -1; }
@@ -550,6 +552,7 @@ function buildMonths(cleanRows) {
       cardSpend: round2(cardSpend), cardSpendAvailable: cardTxs.length > 0,
       giroOut: round2(giroOut), otherOut: round2(otherOut), totalOut: round2(cardSpend + giroOut + otherOut),
       giroCategories, categories: cardTxs.length > 0 ? categories : null, otherCategories, topMerchants, transactions: allTx,
+      catVersion: DuitCategorise.CATEGORISER_VERSION,
     };
   });
   return months;
@@ -616,6 +619,16 @@ function rebuildMonths() {
   const rows = appData.months.flatMap(m => (m.transactions || []).map(txToRow));
   return rows.length ? syncFromRows(rows) : [];
 }
+// Months built by older category rules are rebuilt once, so new rules reach
+// the saved totals. With db, waits for the rules so the rebuild uses them.
+let rulesLoaded = false;
+function refreshStaleMonths() {
+  if (!rulesLoaded) return;
+  const stale = appData.months.some(m => (m.transactions || []).length && m.catVersion !== DuitCategorise.CATEGORISER_VERSION);
+  if (!stale) return;
+  const rebuilt = rebuildMonths();
+  if (rebuilt.length) persistMonths(rebuilt).then(() => render()).catch(err => { ui.syncError = "Couldn't update categories: " + err.message; render(); });
+}
 function opexLineItems(months, category) {
   const rules = currentRules();
   const rows = [];
@@ -657,6 +670,19 @@ function opexRowAmount(tx, cat) {
   return null;
 }
 const txKey = (month, idx) => `${month}|${idx}`;
+// Spend rows take a category; transfers, card bills, fixed bills and income don't.
+function canRecategorise(tx) {
+  const rules = currentRules();
+  const row = { description: tx.description, type: tx.withdrawal != null ? "DR" : "CR" };
+  if (isCardAccount(tx.account)) return DuitRules.routeCardTx(row, rules).kind !== "skip";
+  return isBankAccount(tx.account) && DuitRules.routeBankTx(row, rules).kind === "spend";
+}
+// Every label a row can be given: the built-in ones plus the user's one-off categories.
+function categoryOptions() {
+  const skip = new Set(["Credit Card Payment", "Interest Income"]);
+  const labels = [...DuitCategorise.OPEX_MATCH_RULES.map(r => r.cat), ...CATEGORY_FIELDS.map(f => f[1]), ...currentRules().rules.oneOffCategories, ...DuitRules.BUILT_IN_ONE_OFF];
+  return [...new Set(labels)].filter(l => !skip.has(l)).sort((a, b) => a.localeCompare(b));
+}
 // Rebuilt when the months or the rules are replaced.
 let oneOffFor = null, oneOffRules = null, oneOff = null;
 function oneOffModel() {
@@ -668,11 +694,13 @@ function oneOffModel() {
   }));
   const guesses = DuitCategorise.suggestSpendTypes(rows);
   const opexKeys = new Set(rows.map(r => r.key));
+  const catKeys = new Set();
+  appData.months.forEach(m => (m.transactions || []).forEach((tx, i) => { if (canRecategorise(tx)) catKeys.add(txKey(m.month, i)); }));
   const suggestions = new Map();
   rows.forEach((r, i) => { if (guesses[i] && !r.tx.spendType && !r.tx.suggestDismissed) suggestions.set(r.key, guesses[i]); });
   const flagged = rows.filter(r => SPEND_TYPES[r.tx.spendType]).map(r => ({ ...r, type: r.tx.spendType, life: DuitCategorise.spreadLife(r.tx) }));
   oneOffFor = appData.months; oneOffRules = appData.rules;
-  oneOff = { rows, opexKeys, suggestions, flagged, core: new Map() };
+  oneOff = { rows, opexKeys, catKeys, suggestions, flagged, core: new Map() };
   return oneOff;
 }
 // A month's op-ex categories with flagged rows taken out and spread shares put back.
@@ -700,7 +728,14 @@ function flaggedCategories(m) {
 // The tag or suggestion shown on an op-ex row, and its editor when open.
 function spendControls(key, tx) {
   const model = oneOffModel();
-  if (!model.opexKeys.has(key)) return { tag: "", editor: "" };
+  if (!model.catKeys.has(key)) return { tag: "", editor: "" };
+  const cat = resolveCategory(tx), opts = categoryOptions();
+  if (!opts.includes(cat) && cat !== "Uncategorized") opts.push(cat);
+  const catEditor = `<label class="spend-cat">Category <select class="tx-category" data-key="${esc(key)}">
+      <option value="" ${tx.category ? "" : "selected"}>${tx.category ? "Auto" : `Auto: ${esc(cat)}`}</option>
+      ${opts.map(o => `<option value="${esc(o)}" ${tx.category && cat === o ? "selected" : ""}>${esc(o)}</option>`).join("")}
+    </select></label>`;
+  if (!model.opexKeys.has(key)) return { tag: "", editor: ui.editTx === key ? `<div class="spend-editor">${catEditor}</div>` : "" };
   const t = SPEND_TYPES[tx.spendType], life = DuitCategorise.spreadLife(tx);
   const suggested = !t && model.suggestions.get(key);
   const tag = t ? `<button class="flag-tag" data-action="edit-spend" data-key="${esc(key)}">${esc(t.label)}${life ? ` &middot; ${life} mo` : ""}</button>`
@@ -711,6 +746,7 @@ function spendControls(key, tx) {
   if (ui.editTx !== key) return { tag, editor: "" };
   const opt = (type, label) => `<button class="btn small ${(tx.spendType || "") === type ? "on" : ""}" data-action="set-spend" data-key="${esc(key)}" data-type="${type}">${label}</button>`;
   const editor = `<div class="spend-editor">
+    ${catEditor}
     <div class="toggle-row">${opt("", "Normal")}${Object.keys(SPEND_TYPES).map(k => opt(k, SPEND_TYPES[k].label)).join("")}</div>
     ${life ? `<label class="spend-life">Spread over <input type="number" inputmode="numeric" min="1" max="600" id="spend-life" data-key="${esc(key)}" value="${life}"> months</label>` : ""}
   </div>`;
@@ -726,6 +762,26 @@ function saveSpend(key, patch) {
   const transactions = m.transactions.slice();
   transactions[idx] = tx;
   persistMonths([{ ...m, transactions }]).then(() => render()).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
+}
+// A saved label also teaches the guess for the same merchant's unlabelled rows
+// (categorise.js history), so every month is rebuilt.
+function saveCategory(key, category) {
+  const sep = key.lastIndexOf("|"), month = key.slice(0, sep), idx = Number(key.slice(sep + 1));
+  const m = appData.months.find(x => x.month === month);
+  if (!m || !m.transactions || !m.transactions[idx]) return;
+  const transactions = m.transactions.slice();
+  const tx = { ...transactions[idx], category: category || null };
+  transactions[idx] = tx;
+  const prev = appData.months;
+  appData.months = prev.map(x => x === m ? { ...m, transactions } : x);
+  const merchant = DuitCategorise.merchantKey(tx.description);
+  const follow = merchant ? appData.months.reduce((n, x) => n + (x.transactions || []).filter(t => t !== tx && !t.category && DuitCategorise.merchantKey(t.description) === merchant).length, 0) : 0;
+  const rebuilt = rebuildMonths();
+  persistMonths(rebuilt).then(() => {
+    ui.editTx = null;
+    showToast(category && follow ? `Saved. ${follow} other row${follow !== 1 ? "s" : ""} from this merchant follow it.` : "Saved.");
+    render();
+  }).catch(err => { appData.months = prev; ui.syncError = "Couldn't save that: " + err.message; render(); });
 }
 function ccpAdjustment(m) { const v = m.cardSpendAvailable && m.categories ? m.categories["Credit Card Payment"] : 0; return v ? -v : 0; }
 // Core op-ex: one-offs out, spread shares in.
@@ -799,7 +855,7 @@ async function initPersistence() {
     dbApi = db;
     ui.storage = "synced";
     db.collection("months").onSnapshot(
-      snap => { applySnapshotMonths(snap.docs.filter(d => d.exists).map(d => d.data())); migrateLoaded(); },
+      snap => { applySnapshotMonths(snap.docs.filter(d => d.exists).map(d => d.data())); migrateLoaded(); refreshStaleMonths(); },
       err => { ui.storage = "local"; dbApi = null; appData = loadLocal(); resetPeriod(); ui.syncError = "Cross-device sync unavailable (" + err.message + ") — using this browser only."; render(); }
     );
     db.collection("fixedCommitments").onSnapshot(
@@ -807,7 +863,7 @@ async function initPersistence() {
       () => {}
     );
     db.collection("settings").onSnapshot(
-      snap => { const doc = snap.docs.find(d => d.exists && d.id === "rules"); appData.rules = doc ? doc.data() : null; render(); },
+      snap => { const doc = snap.docs.find(d => d.exists && d.id === "rules"); appData.rules = doc ? doc.data() : null; rulesLoaded = true; refreshStaleMonths(); render(); },
       () => {}
     );
     db.collection("statements").onSnapshot(
@@ -821,7 +877,9 @@ async function initPersistence() {
   } else {
     ui.storage = "local";
     appData = loadLocal();
+    rulesLoaded = true;
     migrateLoaded();
+    refreshStaleMonths();
     resetPeriod();
     render();
   }
@@ -923,6 +981,7 @@ async function restoreAllData(data) {
     appData = { ...data, months: sortMonthKeys(data.months.map(m => m.month)).map(k => canonMonth(data.months.find(m => m.month === k))) };
     saveLocal();
     migrateLoaded();
+    refreshStaleMonths();
     periodCount = -1;
     resetPeriod();
   }
@@ -1805,7 +1864,7 @@ function renderTxList() {
     day = tx.date;
     const isIn = tx.deposit != null;
     const c = spendControls(tx.key, tx);
-    const editable = oneOffModel().opexKeys.has(tx.key);
+    const editable = oneOffModel().catKeys.has(tx.key);
     return `${head}<div class="tx-row">
       <div class="tx-main" ${editable ? `data-action="edit-spend" data-key="${esc(tx.key)}"` : ""}><div class="tx-desc">${esc(tx.description)}</div><div class="tx-meta">${esc(tx.cat)} &middot; ${esc(accountLabel(tx.account))}</div>${c.tag ? `<div class="tx-flags">${c.tag}</div>` : ""}</div>
       <span class="tx-amt ${isIn ? "in" : ""}">${isIn ? "+" : ""}${esc(fmt(isIn ? tx.deposit : tx.withdrawal))}</span>
@@ -1895,6 +1954,7 @@ function onChange(e) {
   }
   else if (t.classList.contains("acct-name")) saveAccountEdit(t.getAttribute("data-id"), { name: t.value.trim().slice(0, 40) });
   else if (t.classList.contains("acct-hidden")) saveAccountEdit(t.getAttribute("data-id"), { hidden: t.checked });
+  else if (t.classList.contains("tx-category")) saveCategory(t.getAttribute("data-key"), t.value);
   else if (t.id === "restore-file-input") {
     const file = t.files && t.files[0];
     if (!file) return;
