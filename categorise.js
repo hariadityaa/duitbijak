@@ -16,37 +16,54 @@ const CATEGORY_ALIASES = {
 };
 const canonCategory = label => (label && CATEGORY_ALIASES[label]) || label;
 
-// First match wins. Pinned rules run before history.
+// Bump when the rules below change what a row is labelled. Saved months
+// carry the version they were built with, and older ones are rebuilt on load.
+const CATEGORISER_VERSION = 2;
+
+// First match wins. Pinned rules run before history. "Investment" is a
+// one-off category by default (rules.js), so it stays out of op-ex.
 const OPEX_MATCH_RULES = [
   { cat: "Convenience Stores", match: /7[\s-]?ELEVEN/i, pinned: true },
   { cat: "Credit Card Payment", match: /PAYMT THRU E-BANK/i },
   { cat: "Interest Income", match: /Bonus Interest|Interest Credit|Interest Earned/i },
   { cat: "Transport", match: /BUS\/MRT/i },
+  { cat: "Investment", match: /IFAST FINANCIAL|FSMONE|ENDOWUS|\bSYFE\b|MOOMOO|TIGER BROKERS|INTERACTIVE BROKERS|FAST COLLECTION U\d{7,8}\./i },
+  { cat: "Insurance", match: /GIRO TMLS|TOKIO MARINE|HSBC LIFE|NTUC INCOME|^MISC DR-DEBIT CARD .*\bINCOME \d|PRUDENTIAL|GREAT EASTERN|SINGLIFE|\bAVIVA\b/i },
+  { cat: "Remittance", match: /\bWISE ASIA|TRANSFERWISE|WISE PAYMENTS/i },
   { cat: "Subscriptions", match: /Netflix|YOUTUBE|Grab\s*Subscription|Subscription\s*Grab|AMZNPRIME|Amazon Prime|ANTHROPIC.*CLAUDE|GOOGLE\s*ONE|GOOGLE\W*PLAY|PAYPAL \*GOOGLE|CARD MEMBERSHIP|ANNUAL FEE|CARD FEE/i },
+  { cat: "Entertainment", match: /TICKETMASTER|SISTIC|STEAMGAMES|STEAM PURCHASE|SINGAPORE POOLS|PLAY!\s*GROUND|N2EENTERTAI|SHAW THEATRES|GOLDEN VILLAGE|CATHAY CINE|^GOOGLE\s+(?!ONE\b)/i },
   { cat: "Utilities", match: /SP Digital|STARHUB|\bGOMO\b|MyRepublic|KEPPEL ELECTRIC|SENOKO|GENECO|TUAS POWER/i },
   { cat: "Sports", match: /PLAYTOMIC|Anytime\s*Fitness|Padel|Badminton/i },
   { cat: "Convenience Stores", match: /\bCHEERS\b/i },
-  { cat: "Groceries", match: /\bNTUC\b|FAIRPRICE|COLD STORAGE|REDMART|NESPRESSO|SHENG SIONG|\bGIANT\b|DON DON DONKI|SAN XIANG|MEATMEN/i },
+  { cat: "Health", match: /CLINIC|MEDICAL|ASIAMEDIC|WHITECOATME|GUARDIAN|WATSONS|PHARMACY|DENTAL|NUTRIFIRST/i },
+  { cat: "Groceries", match: /MEAT SHOP|REDMAN|OFFER & SAV|MEENAKSHI|\bNTUC\b|FAIRPRICE|COLD STORAGE|REDMART|NESPRESSO|SHENG SIONG|\bGIANT\b|DON DON DONKI|SAN XIANG|MEATMEN/i },
   { cat: "Shopping/Online", match: /SHOPEE|LAZADA|AMAZON MKTPLC|\bSHEIN\b|UNIQLO|DECATHLON/i },
-  { cat: "Transport", match: /Grab\*|TADA Mobility|PAYPAL \*GOJEK/i },
-  { cat: "Electronics", match: /BEST DENKI|HARVEY NORMAN|CHALLENGER|AFTERSHOCK|APPLE STORE/i },
-  { cat: "Home & Furniture", match: /\bIKEA\b|\bMUJI\b|NIPPON HOME/i },
-  { cat: "Services", match: /URBANCOMPANY|AXS PTE LTD|HSBC LIFE|WHITECOATME/i },
-  { cat: "Travel", match: /FLYSCOOT|SCOOT PTE|BINTAN RESORT FERRIES|LOTTE DUTY FREE|EXPEDIA|TRIP\W?COM|AGODA|BOOKING\.COM|AIRBNB|SINGAPORE AIRLINES/i },
-  { cat: "Dining & Food", match: /SUBWAY|RAMEN|SUSHIRO|CAFE|BAKERY|BREADTALK|KITCHEN|BISTRO|PIZZ|KOPI|THAI|CURRY|NASI|HAWKER|VENDING|IJOOZ|POKE|TONKOTSU|BUTAO|KOREAN|CATERING|PENYET|GUZMAN|GRUMPY|FOOD|NOODLE|CHICKEN|BURGER|RESTAURANT|EATERY|PRATA|STUFF'?D/i },
+  { cat: "Shopping/Online", match: /OMNI AQUATIC/i },
+  { cat: "Fashion", match: /BRAUN BUFFEL|ARCHIES|TIMEPIECE|CHARLES & KEITH/i },
+  { cat: "Transport", match: /Grab\*|TADA Mobility|PAYPAL \*GOJEK|\bSHELL\b|\bESSO\b|CALTEX/i },
+  { cat: "Electronics", match: /BEST DENKI|HARVEY NORMAN|CHALLENGER|AFTERSHOCK|APPLE STORE|GAIN CITY|NITECORE/i },
+  { cat: "Home & Furniture", match: /\bIKEA\b|\bMUJI\b|NIPPON HOME|ZXDESIGN|KING KOIL|NITORI|ULTIMATE DESK|INTERDESK|KAPAS HOME/i },
+  { cat: "Services", match: /URBANCOMPANY|AXS PTE LTD|SHALOM TRANSPORT|ACORN TECHNICAL/i },
+  { cat: "Travel", match: /FLYSCOOT|SCOOT PTE|BINTAN RESORT FERRIES|LOTTE DUTY FREE|EXPEDIA|TRIP\W?COM|AGODA|BOOKING\.COM|AIRBNB|SINGAPORE AIRLINES|AIRALO|LOVE BALI/i },
+  { cat: "Dining & Food", match: /SUBWAY|RAMEN|SUSHIRO|CAFE|BAKERY|BREADTALK|KITCHEN|BISTRO|PIZZ|KOPI|THAI|CURRY|NASI|HAWKER|VENDING|IJOOZ|POKE|TONKOTSU|BUTAO|KOREAN|CATERING|PENYET|GUZMAN|GRUMPY|FOOD|NOODLE|CHICKEN|BURGER|RESTAURANT|EATERY|PRATA|STUFF'?D|RESTAURA|COFFEE|MCDONALD|WINGSTOP|OLD CHANG KEE|TORI-Q|CHIN THNG|KKO KKO|CARNIVORE|STONE POT|ABURI|KATSU|GOCHI|MUCHACHOS|\bCRAVE\b|BATTERCATCH|AL[\s-]?MUBIN|AL-GHANIYY|SHAKESPOT|AYAM|\bPHO\b|WARUNG|SELERA|HOKKIEN|MEN DON|DOROTHY|SUPERGREEN|BOARDING GATE/i },
+  // Left last so a shop paid by PayNow keeps its own label.
+  { cat: "PayNow to people", match: /OTHR Transfer - Mobile|PayNow Transfer .*To:|^PAYNOW-FAST MX /i },
 ];
 
 // Bank wrappers in front of the merchant name. Words with digits (refs,
 // card numbers, dates, branch codes) are dropped, so one merchant's rows share a key.
 const KEY_PREFIXES = [
   /^MISC (DR|CR)-DEBIT CARD \d+ [A-Z]{3}\s*/,
-  /^PAYNOW-FAST \S+\s*/,
+  /^PAYNOW-FAST\s*/,
+  /^FAST PAYMENT \/ RECEIPT PAYNOW TRANSFER\s*/,
+  /^PAYMENTS \/ COLLECTIONS VIA GIRO\s*/,
+  /^POINT-OF-SALE TRANSACTION( NETS QR PAYMENT)?\s*/,
   /^NETS DEBIT-CONSUMER\s*/,
   /^FAST PAYMENT \/ RECEIPT\s*/,
   /^INWARD (DR|DEBIT|CR)\s*-\s*(FAST|GIRO)?\s*(OTHR|COLL)?\s*/,
   /^WWW\./,
 ];
-const KEY_STOPWORDS = new Set(["SINGAPORE", "SG", "OTHR"]);
+const KEY_STOPWORDS = new Set(["SINGAPORE", "SG", "OTHR", "TO", "MX"]);
 function merchantKey(description) {
   let s = String(description || "").toUpperCase().trim();
   KEY_PREFIXES.forEach(p => { s = s.replace(p, ""); });
@@ -161,7 +178,7 @@ function monthShare(amount, life, fromMonth, month) {
   return k >= 0 && k < life ? amount / life : 0;
 }
 
-const api = { CATEGORY_ALIASES, OPEX_MATCH_RULES, canonCategory, merchantKey, buildCategoryHistory, classifyOpex, resolveCategory, canonCategoryTotals,
+const api = { CATEGORISER_VERSION, CATEGORY_ALIASES, OPEX_MATCH_RULES, canonCategory, merchantKey, buildCategoryHistory, classifyOpex, resolveCategory, canonCategoryTotals,
   ONE_OFF_THRESHOLD, SPEND_TYPES, suggestSpendTypes, spreadLife, monthShare, dayNumber, monthNumber };
 if (typeof module === "object" && module.exports) module.exports = api;
 else root.DuitCategorise = api;
