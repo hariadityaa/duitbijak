@@ -70,10 +70,27 @@ function onChange(e) {
       .catch(err => { ui.restore = null; ui.syncError = err.message; render(); });
     t.value = "";
   }
+  else if (t.id === "rules-file-input") {
+    const file = t.files && t.files[0];
+    if (!file) return;
+    file.text().then(text => addRulesFromText(text)).catch(err => { showToast(err.message); });
+    t.value = "";
+  }
   else if (t.id === "pdf-file-input") {
     const files = t.files;
     startPdfImport(files).catch(err => { ui.pdfImport = null; ui.syncError = "PDF import failed: " + err.message; render(); });
   }
+}
+// Merges rules from a file or an AI reply into the draft. Nothing saves until Save rules.
+function addRulesFromText(text) {
+  if (!ui.rulesDraft) return;
+  let res;
+  try { res = DuitRules.parseRulesText(text); } catch (err) { ui.rulesShareOpen = true; showToast(err.message); render(); return; }
+  const merged = DuitRules.mergeRules(ui.rulesDraft, res.rules);
+  ui.rulesDraft = merged.rules; ui.rulesShareOpen = true;
+  const skipped = res.skipped.length ? ` ${res.skipped.length} skipped as invalid.` : "";
+  showToast(merged.added ? `Added ${merged.added} rule${merged.added !== 1 ? "s" : ""}. Save rules to apply.${skipped}` : `Nothing new to add.${skipped}`);
+  render();
 }
 // Shared by both the paste textarea and the CSV file import: parses the text,
 // saves the resulting months, and reports the outcome the same way either path.
@@ -248,6 +265,19 @@ function onClick(e) {
     d[list].splice(Number(btn.getAttribute("data-idx")), 1);
     render();
   }
+  else if (action === "rules-export") {
+    downloadFile(`duit-bijak-rules-${new Date().toISOString().slice(0, 10)}.json`, "application/json", JSON.stringify(DuitRules.exportRules(appData.rules), null, 1));
+  }
+  else if (action === "rules-import-file") { const input = document.getElementById("rules-file-input"); if (input) input.click(); }
+  else if (action === "rules-paste-add") { const box = document.getElementById("rules-paste"); addRulesFromText(box ? box.value : ""); }
+  else if (action === "rules-prompt") {
+    const txs = appData.months.flatMap(m => m.transactions || []);
+    const prompt = DuitRules.buildRulesPrompt(txs, ui.rulesDraft || appData.rules);
+    ui.rulesPrompt = prompt; ui.rulesShareOpen = true;
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(prompt).then(() => showToast("Prompt copied. Paste it into an AI chat."), () => showToast("Select the prompt below and copy it."));
+    else showToast("Select the prompt below and copy it.");
+    render();
+  }
   else if (action === "rules-discard") { ui.rulesDraft = DuitRules.normaliseRules(appData.rules); render(); }
   else if (action === "rules-suggest") {
     if (!ui.rulesDraft) return;
@@ -276,7 +306,7 @@ function onClick(e) {
     appData.rules = next;
     const rebuilt = rebuildMonths();
     persistRules(next).then(() => rebuilt.length ? persistMonths(rebuilt) : null).then(() => {
-      ui.rulesDraft = null; ui.suggestions = null; ui.sheet = "settings"; ui.syncError = null;
+      ui.rulesDraft = null; ui.suggestions = null; ui.rulesPrompt = null; ui.rulesShareOpen = false; ui.sheet = "settings"; ui.syncError = null;
       showToast(rebuilt.length ? `Rules saved. ${rebuilt.length} month${rebuilt.length !== 1 ? "s" : ""} rebuilt.` : "Rules saved.");
       render();
     }).catch(err => { appData.rules = prev; ui.syncError = "Couldn't save rules: " + err.message; render(); });

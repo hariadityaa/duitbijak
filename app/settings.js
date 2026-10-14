@@ -81,6 +81,7 @@ function renderRules() {
   </div>
   <div class="btn-row"><button class="btn" data-action="rules-suggest" ${imported ? "" : "disabled"}>Suggest from my transactions</button></div>
   ${lists}
+  ${renderRulesShare()}
   <div class="sheet-foot">
     <p>${imported ? `Saving rebuilds ${imported} imported month${imported !== 1 ? "s" : ""}.` : "No imported months to rebuild."}</p>
     ${manual ? `<p>${manual} month${manual !== 1 ? "s" : ""} entered by hand keep${manual === 1 ? "s" : ""} ${manual === 1 ? "its" : "their"} totals.</p>` : ""}
@@ -89,6 +90,26 @@ function renderRules() {
       <button class="btn primary" data-action="rules-save" ${dirty || !appData.rules ? "" : "disabled"}>Save rules</button>
     </div>
   </div>`;
+}
+// Edge case, so it stays collapsed: share rules as a file, or fill them in
+// from an AI chat reply. Both merge into the draft.
+function renderRulesShare() {
+  const hasTxs = appData.months.some(m => (m.transactions || []).length);
+  return `
+  <details class="rules-share" ${ui.rulesShareOpen ? "open" : ""}>
+    <summary>Share or import rules</summary>
+    <p class="paste-help">Export your rules as a file, or add rules from someone else's file. Imports merge into the list above and apply when you save.</p>
+    <div class="btn-row" style="margin-top:0;">
+      <button class="btn small" data-action="rules-export">Export rules</button>
+      <button class="btn small" data-action="rules-import-file">Import from file</button>
+    </div>
+    <input type="file" accept=".json,application/json" id="rules-file-input" style="display:none">
+    <p class="paste-help">Or have an AI chat suggest rules. The prompt lists one line per merchant, with no dates or account numbers. Paste its reply below.</p>
+    <div class="btn-row" style="margin-top:0;"><button class="btn small" data-action="rules-prompt" ${hasTxs ? "" : "disabled"}>Copy prompt for an AI chat</button></div>
+    ${ui.rulesPrompt ? `<textarea class="paste-area" readonly aria-label="Prompt to copy" style="min-height:96px;">${esc(ui.rulesPrompt)}</textarea>` : ""}
+    <textarea class="paste-area" id="rules-paste" aria-label="Reply with rules" placeholder="Paste the reply here" style="min-height:96px;margin-top:8px;"></textarea>
+    <div class="btn-row"><button class="btn small" data-action="rules-paste-add">Add pasted rules</button></div>
+  </details>`;
 }
 function renderSuggestions() {
   const list = ui.suggestions || [];

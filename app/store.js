@@ -42,7 +42,7 @@ let ui = {
   bucketOverview: "opex",
   drill: [], drillSort: "date", // drill-down sheets, top last: { kind: "month" | "cat", bucket, month, cat }
   sheet: null, // null | "add" | "paste" | "month" | "settings" | "rules" | "suggest" | "statements" | "accounts"
-  rulesDraft: null, suggestions: null, // rule edits wait here until saved
+  rulesDraft: null, suggestions: null, rulesShareOpen: false, rulesPrompt: null, // rule edits wait here until saved
   customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null,
   txFilter: null, // { month, bucket, label }: set from a drill-down sheet's "See all"
   storage: "connecting", // "connecting" | "synced" | "local"
