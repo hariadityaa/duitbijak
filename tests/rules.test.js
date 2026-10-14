@@ -31,6 +31,20 @@ test("never saved means defaults; saved lists stay as saved", () => {
   assert.deepStrictEqual(r.cardBillPayments, R.DEFAULT_RULES.cardBillPayments, "a missing list falls back");
 });
 
+test("savings: Investment by default; a label in both lists counts as savings", () => {
+  assert.deepStrictEqual(R.DEFAULT_RULES.savingsCategories, ["Investment"]);
+  const old = R.normaliseRules({ oneOffCategories: ["Internal Transfer", "Investment", "Renovation"] });
+  assert.deepStrictEqual(old.oneOffCategories, ["Internal Transfer", "Renovation"], "rules saved before savings move Investment over");
+  assert.deepStrictEqual(old.savingsCategories, ["Investment"]);
+  const r = R.normaliseRules({ oneOffCategories: ["CPF Top-up"], savingsCategories: ["cpf top-up", "Reimbursement"] });
+  assert.deepStrictEqual(r.oneOffCategories, [], "matched in any case");
+  assert.deepStrictEqual(r.savingsCategories, ["cpf top-up"], "built-in one-off can't be savings");
+  assert.deepStrictEqual(R.normaliseRules({ savingsCategories: [] }).savingsCategories, [], "an emptied list stays empty");
+  const c = R.compileRules(null);
+  assert.ok(c.isSavings("Investment") && c.isOneOff("Investment"), "savings stays out of op-ex");
+  assert.ok(!c.isSavings("Internal Transfer") && c.isOneOff("Internal Transfer"));
+});
+
 test("fixed bills need a name and a match, unique by name", () => {
   const r = R.normaliseRules({ fixedBills: [{ name: "Rent", match: "LANDLORD" }, { name: "rent", match: "X" }, { name: "", match: "Y" }, { name: "Gym" }] });
   assert.deepStrictEqual(r.fixedBills, [{ name: "Rent", match: "LANDLORD" }]);

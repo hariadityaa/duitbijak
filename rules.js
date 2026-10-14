@@ -1,5 +1,5 @@
 /* Duit Bijak: the user's own rules for sorting transactions into totals.
-   Fixed bills, salary, one-off categories, card bill payments and internal
+   Fixed bills, salary, one-off and savings categories, card bill payments and internal
    transfers are edited in Settings and saved with the ledger. Nothing about
    one person's finances lives in code: DEFAULT_RULES are generic Singapore
    starters, used until the user saves their own.
@@ -25,7 +25,10 @@ const DEFAULT_RULES = {
     { name: "Town Council", match: "TOWN COUNCIL" },
   ],
   salary: ["SALARY", "GIRO SALA", "PAYROLL"],
-  oneOffCategories: ["Internal Transfer", "Investment"],
+  oneOffCategories: ["Internal Transfer"],
+  // Cash moved into assets you still own: kept out of op-ex, and counted
+  // towards the savings rate instead of spend.
+  savingsCategories: ["Investment"],
   cardBillPayments: [
     "/Bill Payment.*(Cards?|DBSC)/", "BILL PAYMENT - DBS INTERNET",
     "mBK-UOB Cards", "PAYMT THRU E-BANK",
@@ -34,7 +37,7 @@ const DEFAULT_RULES = {
   ],
   internalTransfers: ["/Funds Tr(a|f)nsfer/", "Funds Trf"],
 };
-const LISTS = ["salary", "oneOffCategories", "cardBillPayments", "internalTransfers"];
+const LISTS = ["salary", "oneOffCategories", "savingsCategories", "cardBillPayments", "internalTransfers"];
 
 /* ---------------------------- patterns ---------------------------- */
 const isRegexForm = s => s.length > 2 && s[0] === "/" && s[s.length - 1] === "/";
@@ -70,7 +73,11 @@ function normaliseRules(raw) {
     name: String((b && b.name) || "").trim(), match: String((b && b.match) || "").trim(),
   })).filter(b => b.name && b.match && !names.has(b.name.toUpperCase()) && names.add(b.name.toUpperCase()));
   LISTS.forEach(k => { out[k] = cleanList(Array.isArray(raw[k]) ? raw[k] : DEFAULT_RULES[k]); });
-  out.oneOffCategories = out.oneOffCategories.filter(c => !BUILT_IN_ONE_OFF.includes(c));
+  // Rules saved before savings existed listed Investment as one-off. A label
+  // in both lists counts as savings.
+  const savings = new Set(out.savingsCategories.map(c => c.toUpperCase()));
+  out.savingsCategories = out.savingsCategories.filter(c => !BUILT_IN_ONE_OFF.includes(c));
+  out.oneOffCategories = out.oneOffCategories.filter(c => !BUILT_IN_ONE_OFF.includes(c) && !savings.has(c.toUpperCase()));
   if (raw.updatedAt) out.updatedAt = String(raw.updatedAt);
   return out;
 }
@@ -82,14 +89,17 @@ function compileRules(raw) {
   const res = list => list.map(p => compilePattern(p).re).filter(Boolean);
   const any = list => { const rs = res(list); return d => rs.some(re => re.test(d || "")); };
   const bills = r.fixedBills.map(b => ({ name: b.name, re: compilePattern(b.match).re })).filter(b => b.re);
-  const oneOff = new Set([...r.oneOffCategories, ...BUILT_IN_ONE_OFF]);
+  const savings = new Set(r.savingsCategories);
+  const oneOff = new Set([...r.oneOffCategories, ...BUILT_IN_ONE_OFF, ...savings]);
   return {
     rules: r,
     isTransfer: any(r.internalTransfers),
     isCardBill: any(r.cardBillPayments),
     isSalary: any(r.salary),
     fixedBillFor: d => { const b = bills.find(x => x.re.test(d || "")); return b ? b.name : null; },
+    // Savings labels are one-off too, so op-ex leaves them out.
     isOneOff: label => oneOff.has(label),
+    isSavings: label => savings.has(label),
   };
 }
 

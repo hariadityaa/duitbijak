@@ -680,7 +680,7 @@ function canRecategorise(tx) {
 // Every label a row can be given: the built-in ones plus the user's one-off categories.
 function categoryOptions() {
   const skip = new Set(["Credit Card Payment", "Interest Income"]);
-  const labels = [...DuitCategorise.OPEX_MATCH_RULES.map(r => r.cat), ...CATEGORY_FIELDS.map(f => f[1]), ...currentRules().rules.oneOffCategories, ...DuitRules.BUILT_IN_ONE_OFF];
+  const labels = [...DuitCategorise.OPEX_MATCH_RULES.map(r => r.cat), ...CATEGORY_FIELDS.map(f => f[1]), ...currentRules().rules.oneOffCategories, ...currentRules().rules.savingsCategories, ...DuitRules.BUILT_IN_ONE_OFF];
   return [...new Set(labels)].filter(l => !skip.has(l)).sort((a, b) => a.localeCompare(b));
 }
 // Rebuilt when the months or the rules are replaced.
@@ -1264,12 +1264,15 @@ function saveAccountEdit(id, patch) {
 const RULE_LISTS = [
   ["salary", "Salary", "Keyword or /regex/", "Credits that count as salary."],
   ["oneOffCategories", "One-off categories", "Category name", "Matches category labels, not descriptions. Kept out of op-ex."],
+  ["savingsCategories", "Savings categories", "Category name", "Category labels for money moved into assets you keep. Kept out of op-ex; counted in the savings rate."],
   ["cardBillPayments", "Card bill payments", "Keyword or /regex/", "Skipped, so card spend isn't counted twice."],
   ["internalTransfers", "Internal transfers", "Keyword or /regex/", "Skipped. Add your own name to catch PayNow to yourself."],
 ];
+// Lists of category labels rather than description patterns.
+const LABEL_LISTS = ["oneOffCategories", "savingsCategories"];
 const rulesKey = r => JSON.stringify({ ...r, updatedAt: null });
 function ruleChip(list, value, i) {
-  const bad = list !== "oneOffCategories" && DuitRules.patternError(value);
+  const bad = !LABEL_LISTS.includes(list) && DuitRules.patternError(value);
   return `<span class="rule-chip ${bad ? "bad" : ""}" ${bad ? `title="${esc(bad)}"` : ""}><span class="rule-match">${esc(value)}</span><button class="icon-btn" data-action="rules-remove" data-list="${list}" data-idx="${i}" aria-label="Remove ${esc(value)}">${ICON(ICONS.close, 16)}</button></span>`;
 }
 function renderRules() {
@@ -1555,8 +1558,16 @@ function renderEmptyState() {
 /* ============================== overview tab ============================== */
 function bucketSources(m, bucket) {
   if (bucket === "opex") return m.cardSpendAvailable && m.categories ? [{ src: coreCategories(m), tag: null }] : [];
-  return [{ src: m.giroCategories, tag: "Fixed" }, { src: m.otherCategories, tag: "One-off" }, { src: flaggedCategories(m), tag: "Flagged" }];
+  const { savings, oneOffs } = splitOther(m);
+  return [{ src: m.giroCategories, tag: "Fixed" }, { src: oneOffs, tag: "One-off" }, { src: savings, tag: "Savings" }, { src: flaggedCategories(m), tag: "Flagged" }];
 }
+// A month's other-out labels, split into savings and true one-offs by the current rules.
+function splitOther(m) {
+  const rules = currentRules(), savings = {}, oneOffs = {};
+  Object.entries(m.otherCategories || {}).forEach(([k, v]) => { (rules.isSavings(k) ? savings : oneOffs)[k] = v; });
+  return { savings, oneOffs };
+}
+const savingsAmount = m => Object.values(splitOther(m).savings).reduce((s, v) => s + v, 0);
 function renderOverview(filtered) {
   const bucket = ui.bucketOverview;
   const available = filtered.filter(m => m.cardSpendAvailable);
@@ -1588,6 +1599,12 @@ function renderOverview(filtered) {
   const oneOffTotal = periodFlagged.reduce((s, r) => s + r.amount, 0);
   const oneOffByType = Object.keys(FLAG_GROUPS).map(t => [SPEND_TYPES[t].label, periodFlagged.filter(r => r.type === t).reduce((s, r) => s + r.amount, 0)]).filter(([, v]) => v);
   const pendingSuggestions = [...model.suggestions.keys()].filter(k => inPeriod.has(k.split("|")[0])).length;
+  // Savings rate: savings over salary for the period. Salary credits are
+  // take-home pay; other credits (refunds, transfers in) would inflate it.
+  const totalSavings = filtered.reduce((s, m) => s + savingsAmount(m), 0);
+  const totalSalary = filtered.reduce((s, m) => s + (m.salaryIn || 0), 0);
+  const savingsRate = totalSalary > 0 ? Math.round(totalSavings / totalSalary * 100) : null;
+  const savingsSub = ui.hideIncome ? "rate hidden with income" : savingsRate != null ? `${savingsRate}% of salary` : "no salary in period";
 
   // Op-Ex per-month figures divide by confirmed months only, so a partial
   // month (a card statement still missing) doesn't pull the averages down.
@@ -1675,6 +1692,7 @@ function renderOverview(filtered) {
     <div class="metric"><div class="metric-label">Core Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
     <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">core, after reimbursements</div></div>
     <div class="metric"><div class="metric-label">Total out</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
+    <div class="metric wide"><div class="metric-label">Savings / mo</div><div class="metric-value">${esc(fmt(totalSavings / filtered.length))}</div><div class="metric-sub">${esc(savingsSub)}</div></div>
     ${oneOffTotal || pendingSuggestions ? `<div class="metric wide"><div class="metric-label">One-offs</div>
       <div class="metric-value">${esc(fmt(oneOffTotal))}<small> &middot; ${esc(fmt(oneOffTotal / filtered.length))}/mo</small></div>
       <div class="metric-sub">${oneOffByType.map(([t, v]) => `${esc(t)} ${esc(fmt(v))}`).join(" &middot; ") || "None flagged yet"}${pendingSuggestions ? ` &middot; <button class="link-btn" data-action="open-sheet" data-sheet="review">${pendingSuggestions} to review</button>` : ""}</div></div>` : ""}
@@ -2105,9 +2123,11 @@ function onClick(e) {
       const list = btn.getAttribute("data-list");
       const value = (document.getElementById(`rule-input-${list}`).value || "").trim();
       if (!value) { showToast("Type something first."); return; }
-      const err = list !== "oneOffCategories" && DuitRules.patternError(value);
+      const err = !LABEL_LISTS.includes(list) && DuitRules.patternError(value);
       if (err) { showToast(`${err}.`); return; }
-      if (d[list].some(v => v.toUpperCase() === value.toUpperCase()) || (list === "oneOffCategories" && DuitRules.BUILT_IN_ONE_OFF.includes(value))) { showToast("Already in the list."); return; }
+      if (d[list].some(v => v.toUpperCase() === value.toUpperCase()) || (LABEL_LISTS.includes(list) && DuitRules.BUILT_IN_ONE_OFF.includes(value))) { showToast("Already in the list."); return; }
+      const other = LABEL_LISTS.find(l => l !== list && LABEL_LISTS.includes(list) && d[l].some(v => v.toUpperCase() === value.toUpperCase()));
+      if (other) { showToast(`Already a ${other === "savingsCategories" ? "savings" : "one-off"} category.`); return; }
       d[list].push(value);
     }
     render();
