@@ -1,0 +1,9 @@
+{
+  "name": "duitbijak",
+  "private": true,
+  "description": "Personal finance PWA. Static files, no build step; Node is only for checks and tests.",
+  "scripts": {
+    "check": "node scripts/check.js",
+    "test": "node scripts/check.js && for f in tests/*.test.js; do node \"$f\" || exit 1; done"
+  }
+}
