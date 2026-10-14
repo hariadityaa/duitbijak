@@ -40,6 +40,16 @@ Modules are UMD-style (`(function (root) {...})`) so they load in the browser an
 - **New `.js` file (root or `app/`) or `styles.css`**: add a `<script src>` or `<link>` in `index.html` and an entry in `APP_SHELL` in `sw.js`. `npm run check` fails if either is missing.
 - UI is built from `innerHTML` strings. Escape every interpolated value that came from a statement, CSV or user input with `esc()`.
 - Keep pure logic in the modules so it stays testable. Add a test with it.
+- Real statements, CSVs and backups stay out of git. Tests use synthetic fixtures.
+
+## Product rules (Hari's calls, repeated across sessions)
+- Friends use this app. No personal names, banks, accounts or regexes in code. They live in user rules (Settings).
+- Local-only is the promise. AI read (Gemini) stays opt-in and low-key: offer it only on parse failure or a totals mismatch.
+- A partial month (statement still missing) never drives a headline figure, an average or a preset period.
+- Op-ex is recurring spend. Assets and one-offs (renovation, PC, travel) are capex and show apart from it.
+- For parser or category accuracy, Hari's extract sheet is the source of truth. Ask for the link.
 
 ## Workflow
 Branch, push, open a PR, wait for CI, squash-merge when green, confirm the Pages deploy.
+- Wait on CI and the deploy with `mcp__github__pull_request_read` / `mcp__github__actions_list`, or a Monitor until-loop. Never a `sleep` loop in Bash: auto mode blocks it.
+- Deploy is live when `curl -s https://hariadityaa.github.io/duitbijak/sw.js` shows the new `CACHE_NAME`. One check, not a polling loop.
