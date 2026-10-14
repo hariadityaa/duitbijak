@@ -8,8 +8,9 @@
 <meta name="description" content="A local-only finance ledger. Nothing you enter leaves your browser.">
 <meta name="theme-color" content="#0a0a0a">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon-192.png" type="image/png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/favicon-v3.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192-v3.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-v3.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Duit Bijak">
@@ -151,7 +152,7 @@
   .clickable.selected{ background:var(--surface-2); }
 
   .trend-cell{ display:flex; align-items:flex-end; gap:4px; height:24px; min-width:60px; }
-  .trend-cell .bar{ width:4px; border-radius:0; min-height:1px; flex-shrink:0; }
+  .trend-cell .bar{ width:6px; border-radius:2px 2px 0 0; min-height:2px; flex-shrink:0; }
 
   .items{ margin-top:8px; padding:12px; background:var(--surface-2); border-radius:var(--radius); }
   .item-row{ display:flex; align-items:baseline; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; }
@@ -359,7 +360,7 @@ function classifyFile(rows) {
 }
 function classifyOpex(description) {
   const hit = OPEX_MATCH_RULES.find(r => r.match.test(description || ""));
-  return hit ? hit.cat : "Other";
+  return hit ? hit.cat : "Uncategorized";
 }
 function monthKeyFromDate(dateStr) {
   const parts = dateStr.trim().split(" ");
@@ -391,7 +392,7 @@ function buildMonths(cleanRows) {
       const giro = tx.type === "DR" ? GIRO_KEYWORDS.find(g => g.match.test(tx.description)) : null;
       if (giro) { giroOut += tx.amount; giroCategories[giro.key] += tx.amount; return; }
       if (tx.type === "CR") { if (SALARY_MATCH.test(tx.description)) salaryIn += tx.amount; else otherIn += tx.amount; return; }
-      const label = tx.category || "Uncategorized";
+      const label = tx.category || classifyOpex(tx.description);
       if (label === "Credit Card Payment") return;
       if (OTHER_CATEGORY_WHITELIST.has(label)) { otherOut += tx.amount; otherCategories[label] = round2((otherCategories[label] || 0) + tx.amount); }
       else { cardSpend += tx.amount; categories[label] = round2((categories[label] || 0) + tx.amount); }
@@ -400,7 +401,7 @@ function buildMonths(cleanRows) {
     cardTxs.forEach(tx => {
       if (CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
       const signed = tx.type === "DR" ? tx.amount : -tx.amount;
-      const cat = tx.category || "Uncategorized";
+      const cat = tx.category || classifyOpex(tx.description);
       if (cat === "Credit Card Payment") return;
       if (OTHER_CATEGORY_WHITELIST.has(cat)) { otherOut += signed; otherCategories[cat] = round2((otherCategories[cat] || 0) + signed); }
       else {
@@ -596,7 +597,7 @@ function stackedBar(entries, total, colorOf) {
 function trendCell(values, max) {
   const bars = values.map(v => {
     const h = max > 0 ? Math.max(2, Math.round(v / max * 22)) : 2;
-    return `<div class="bar" style="height:${h}px;background:${v > 0 ? "var(--text-3)" : "transparent"}"></div>`;
+    return `<div class="bar" style="height:${h}px;background:${v > 0 ? "var(--text-2)" : "var(--border)"}"></div>`;
   }).join("");
   return `<div class="trend-cell">${bars}</div>`;
 }
@@ -622,12 +623,12 @@ function renderHeader() {
     <div class="header-actions">
       <div class="header-btns">
         <button class="btn ${ui.showPaste ? "on" : ""}" data-action="toggle-paste">Add data</button>
-        <button class="btn ${ui.hideIncome ? "on" : ""}" data-action="toggle-income">${ui.hideIncome ? "Income hidden" : "Show income"}</button>
+        <button class="btn ${ui.hideIncome ? "" : "on"}" data-action="toggle-income" aria-pressed="${!ui.hideIncome}">${ui.hideIncome ? "Show income" : "Hide income"}</button>
       </div>
       ${ui.lastSynced ? `<span class="note">Updated ${esc(ui.lastSynced)}</span>` : ""}
     </div>
   </div>
-  ${ui.storage === "local" ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>This data lives only in this browser's local storage — nothing is uploaded anywhere. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
+  ${ui.storage === "local" && !months.length ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>This data lives only in this browser's local storage — nothing is uploaded anywhere. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
   ${ui.syncError ? `<div class="banner error"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>${esc(ui.syncError)}</span></div>` : ""}
   ${renderAppPrompts()}
   ${ui.showPaste ? renderPastePanel() : ""}
@@ -663,7 +664,7 @@ function renderPastePanel() {
       <input type="file" accept=".csv,.tsv,text/csv" id="csv-file-input" style="display:none">
     </div>
     <p class="paste-help" style="margin-top:0;">— or paste below —</p>
-    <textarea class="paste-area" id="paste-input" placeholder="Statement File&#9;Bank&#9;Date&#9;Description&#9;Amount&#9;Type&#9;Category&#10;…"></textarea>
+    <textarea class="paste-area" id="paste-input" placeholder="Statement File&#9;Bank&#9;Date&#9;Description&#9;Amount&#9;Type&#9;Category&#10;…">${esc(ui.pasteDraft || "")}</textarea>
     <div class="btn-row">
       <button class="btn primary" data-action="process-paste">Process pasted data</button>
       <button class="btn ghost" data-action="cancel-paste">Cancel</button>
@@ -744,7 +745,11 @@ function renderOverview(filtered) {
   const colorOf = colorMap(cats.map(([c]) => c));
   const bucketTotal = cats.reduce((s, [, v]) => s + v, 0);
   const maxCat = cats.reduce((m, [, v]) => Math.max(m, v), 0);
-  const reimb = bucket === "opex" ? filtered.reduce((s, m) => s + reimbursementAmount(m), 0) : 0;
+  // Op-Ex only exists for months with a card statement, so its per-month
+  // figures divide by those months — matching the Avg Op-Ex metric above.
+  const bucketMonths = bucket === "opex" ? available.length : filtered.length;
+  const perMonth = v => bucketMonths ? v / bucketMonths : 0;
+  const reimb = bucket === "opex" ? available.reduce((s, m) => s + reimbursementAmount(m), 0) : 0;
   const netBucketTotal = bucketTotal - reimb;
   const catValue = (m, cat) => bucketSources(m, bucket).reduce((s, { src }) => s + ((src || {})[cat] || 0), 0);
   const hasLatest = bucket === "opex" ? latest.cardSpendAvailable : true;
@@ -775,7 +780,7 @@ function renderOverview(filtered) {
       <div class="row2-top">
         <span class="swatch" style="background:${colorOf(cat)}"></span>
         <span class="row2-name">${esc(cat)}${tags[cat] ? `<span class="tag">${esc(tags[cat])}</span>` : ""}</span>
-        <span class="row2-amt">${esc(fmt(total / filtered.length))}<small>/mo</small></span>
+        <span class="row2-amt">${esc(fmt(perMonth(total)))}<small>/mo</small></span>
       </div>
       <div class="row2-bottom">
         <div class="row2-bar"><div class="row2-bar-fill" style="width:${barPct}%;background:${colorOf(cat)}"></div></div>
@@ -790,13 +795,13 @@ function renderOverview(filtered) {
       <div class="row2-top">
         <span class="swatch" style="background:var(--success)"></span>
         <span class="row2-name">Reimbursement<span class="tag">Offset</span></span>
-        <span class="row2-amt" style="color:var(--success)">${esc(fmt(-reimb / filtered.length))}<small>/mo</small></span>
+        <span class="row2-amt" style="color:var(--success)">${esc(fmt(perMonth(-reimb)))}<small>/mo</small></span>
       </div>
       <div class="row2-bottom"><div class="row2-bar"></div><span class="row2-total">${esc(fmt(-reimb))} total</span></div>
     </div>
     <div class="row2" style="font-weight:600;">
       <div class="row2-top"><span class="row2-name" style="font-weight:600;">Net Op-Ex</span>
-        <span class="row2-amt">${esc(fmt(netBucketTotal / filtered.length))}<small>/mo</small></span></div>
+        <span class="row2-amt">${esc(fmt(perMonth(netBucketTotal)))}<small>/mo</small></span></div>
       <div class="row2-bottom"><span class="row2-total">${esc(fmt(netBucketTotal))} total</span></div>
     </div>` : "";
 
@@ -806,7 +811,7 @@ function renderOverview(filtered) {
     ${!ui.hideIncome ? `Total in ${esc(fmt(totalIn))} &middot; ` : ""}Total out ${esc(fmt(totalOut))}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}
   </div>
   <div class="metrics">
-    <div class="metric ${!latest.cardSpendAvailable ? "warn" : delta > 15 ? "warn" : delta < -15 ? "ok" : ""}">
+    <div class="metric ${!latest.cardSpendAvailable ? "" : delta > 15 ? "warn" : delta < -15 ? "ok" : ""}">
       <div class="metric-label">${esc(latest.month)} Op-Ex</div>
       <div class="metric-value ${!latest.cardSpendAvailable ? "warn" : delta > 15 ? "warn" : delta < -15 ? "ok" : ""}">${latest.cardSpendAvailable ? esc(fmt(opexAmount(latest))) : "Pending"}</div>
       <div class="metric-sub">${latest.cardSpendAvailable ? (delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—") : "no card stmt yet"}</div>
@@ -821,7 +826,7 @@ function renderOverview(filtered) {
     ${monthRows}
   </div>
   <div class="card">
-    <p class="card-title">Spend by category &middot; ${esc(filtered[0].month)} – ${esc(latest.month)} (${filtered.length} mo)</p>
+    <p class="card-title">Spend by category &middot; ${esc(filtered[0].month)} – ${esc(latest.month)} (${bucketMonths} mo)</p>
     ${bucketToggle("bucketOverview", bucket)}
     ${cats.length === 0 ? `<div style="font-size:14px;color:var(--text-2);">No data available for this view.</div>` : catRows + reimbRow}
   </div>`;
@@ -1031,7 +1036,7 @@ function onChange(e) {
     const file = t.files && t.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => ingestText(String(reader.result || ""), ` from ${file.name}`);
+    reader.onload = () => ingestText(String(reader.result || ""), ` from ${file.name}`, false);
     reader.onerror = () => { ui.syncError = `Couldn't read ${file.name}.`; render(); };
     reader.readAsText(file);
     t.value = "";
@@ -1039,16 +1044,17 @@ function onChange(e) {
 }
 // Shared by both the paste textarea and the CSV file import: parses the text,
 // saves the resulting months, and reports the outcome the same way either path.
-function ingestText(text, sourceSuffix) {
+// Pasted text is kept in the box on failure so it can be fixed, not re-pasted.
+function ingestText(text, sourceSuffix, fromPaste) {
   let parsedMonths;
   try { parsedMonths = syncFromText(text); }
-  catch (err) { ui.syncError = err.message; render(); return; }
+  catch (err) { ui.syncError = err.message; if (fromPaste) ui.pasteDraft = text; render(); return; }
   persistMonths(parsedMonths).then(() => {
-    ui.showPaste = false; ui.syncError = null;
+    ui.showPaste = false; ui.syncError = null; ui.pasteDraft = "";
     if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
     showToast(`Loaded ${parsedMonths.length} month${parsedMonths.length !== 1 ? "s" : ""}${sourceSuffix}.`);
     render();
-  }).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
+  }).catch(err => { ui.syncError = "Couldn't save that: " + err.message; if (fromPaste) ui.pasteDraft = text; render(); });
 }
 function onClick(e) {
   const btn = e.target.closest("[data-action]");
@@ -1058,7 +1064,7 @@ function onClick(e) {
 
   if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; render(); }
   else if (action === "toggle-paste") { ui.showPaste = !ui.showPaste; render(); const ta = document.getElementById("paste-input"); if (ta) ta.focus(); }
-  else if (action === "cancel-paste") { ui.showPaste = false; render(); }
+  else if (action === "cancel-paste") { ui.showPaste = false; ui.pasteDraft = ""; ui.syncError = null; render(); }
   else if (action === "apply-update") { location.reload(); }
   else if (action === "install-app") {
     const ev = pwa.installEvent;
@@ -1090,7 +1096,7 @@ function onClick(e) {
     const text = ta ? ta.value : "";
     if (!text.trim()) return;
     btn.disabled = true; btn.textContent = "Processing…";
-    ingestText(text, "");
+    ingestText(text, "", true);
   }
   else if (action === "trigger-csv-import") {
     const input = document.getElementById("csv-file-input");

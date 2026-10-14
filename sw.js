@@ -1,14 +1,15 @@
 // Bump this on any deploy that changes the files below. A new sw.js is what
 // tells open copies of the app that an update is ready. CI checks the bump.
-const CACHE_NAME = "duit-bijak-v3";
+const CACHE_NAME = "duit-bijak-v4";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png",
+  "./icons/icon-192-v3.png",
+  "./icons/icon-512-v3.png",
+  "./icons/icon-maskable-512-v3.png",
+  "./icons/apple-touch-icon-v3.png",
+  "./icons/favicon-v3.svg",
 ];
 
 // cache: "reload" skips the browser's HTTP cache. GitHub Pages sends
