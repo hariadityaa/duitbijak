@@ -325,6 +325,35 @@
   .toast{ position:fixed; bottom:calc(var(--nav-h) + env(safe-area-inset-bottom) + 88px); left:50%; transform:translateX(-50%); background:var(--accent); color:var(--on-accent); padding:12px 16px; border-radius:var(--radius); font-size:14px; font-weight:500; z-index:50; }
 
   .settings-meta a{ color:var(--text); text-decoration:underline; text-underline-offset:2px; }
+
+  /* Rules sheet: fixed bills as rows, the other lists as removable chips */
+  .rule-row{ display:flex; align-items:center; gap:12px; padding:4px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .rule-row .rule-name{ flex:0 1 40%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rule-match{ flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-mono); font-size:13px; color:var(--text-2); }
+  .rule-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .rule-chip{ display:inline-flex; align-items:center; gap:4px; max-width:100%; min-height:32px; padding:0 4px 0 12px; border:1px solid var(--border); border-radius:var(--radius-full); font-size:13px; color:var(--text); }
+  .rule-chip .rule-match{ color:var(--text); }
+  .rule-chip.locked{ padding-right:12px; color:var(--text-2); }
+  .rule-chip.bad, .rule-row.bad .rule-match{ border-color:var(--danger); color:var(--danger); }
+  .rule-chip .icon-btn, .rule-row .icon-btn{ width:32px; height:32px; }
+  .rule-add{ display:flex; gap:8px; flex-wrap:wrap; }
+  /* Accounts sheet */
+  .acct-row{ display:flex; align-items:center; gap:12px; margin-top:8px; }
+  .acct-row .acct-name{ flex:1 1 0; min-width:0; }
+  .acct-row.hidden-acct .acct-name{ color:var(--text-2); }
+  .acct-hide{ display:flex; align-items:center; gap:6px; min-height:44px; font-size:14px; color:var(--text-2); white-space:nowrap; }
+  .acct-meta{ margin:4px 0 0; font-size:13px; color:var(--text-2); }
+  .rule-add input{ flex:1 1 140px; min-width:0; }
+  /* Sticks over the sheet's bottom padding, so rows don't show below it */
+  .sheet-foot{
+    --pad:calc(24px + env(safe-area-inset-bottom));
+    position:sticky; bottom:calc(-1 * var(--pad)); z-index:1;
+    margin:24px calc(-1 * var(--gutter)) calc(-1 * var(--pad)); padding:12px var(--gutter) calc(12px + var(--pad));
+    background:var(--surface); border-top:1px solid var(--border);
+  }
+  .sheet-foot p{ margin:0; font-size:13px; color:var(--text-2); line-height:1.5; }
+  .suggest-card{ padding:12px; margin-bottom:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2); }
+  .suggest-card .settings-meta{ margin:8px 0 0; overflow-wrap:anywhere; }
 </style>
 </head>
 <body>
@@ -332,10 +361,12 @@
 <div class="wrap" id="app"></div>
 <div id="toast-holder"></div>
 
+<script src="accounts.js"></script>
 <script src="pdf-import.js"></script>
 <script src="gemini-parse.js"></script>
 <script src="categorise.js"></script>
 <script src="statements.js"></script>
+<script src="rules.js"></script>
 <script>
 (function(){
 "use strict";
@@ -352,29 +383,15 @@ const CATEGORY_FIELDS = [
   ["cat_other","Other"],
 ];
 
-// No defaults here on purpose — this is a public template. Each visitor's
-// fixed commitments are entered by hand (Deep Dive tab) and kept only in
-// their own browser; nobody else's numbers ship with the page.
-const DEFAULT_GIRO = { "HDB Loan": 0, "TMLS (Insurance/Tax)": 0, "iFAST Investment": 0, "IRAS Income Tax": 0 };
-
-const GIRO_KEYWORDS = [
-  { key: "HDB Loan", match: /HDB Housing Loan/i },
-  { key: "TMLS (Insurance/Tax)", match: /\bTMLS\b/i },
-  { key: "iFAST Investment", match: /iFAST FINANCIAL/i },
-  { key: "IRAS Income Tax", match: /IRAS Income Tax/i },
-];
 // Statement types. "Other …" are statements read by Gemini (gemini-parse.js).
-const BANK_TYPES = new Set(["UOB One", "POSB", "Other account"]);
-const CARD_TYPES = new Set(["DBS CC", "UOB Card", "Other card"]);
-const SALARY_MATCH = /Salary Payment/i;
-const INTERBANK_TRANSFER_MATCH = /Funds Tr(a|f)nsfer|Funds Trf/i;
-const CARD_BILL_PAYMENT_MATCH = /Bill Payment.*(Cards?|DBSC)|mBK-UOB Cards|BILL PAYMENT - DBS INTERNET/i;
-const OTHER_CATEGORY_WHITELIST = new Set([
-  "iFAST Investment", "Renovation", "Internal Transfer",
-  "IRAS Income Tax", "TMLS (Insurance/Tax)", "HDB Loan", "Family Support", "Reimbursement",
-]);
-
-// Category rules and history matching live in categorise.js.
+// Bank vs card comes from the account id (accounts.js), e.g. card-dbs-5678.
+const isBankAccount = id => DuitAccounts.kindOf(id) === "bank";
+const isCardAccount = id => DuitAccounts.kindOf(id) === "card";
+const accountLabel = id => DuitAccounts.accountName(id, appData.accounts);
+const sourceLabel = src => DuitAccounts.sourceName(src, appData.accounts);
+// Category rules and history matching live in categorise.js. Fixed bills,
+// salary, one-offs, card bill payments and transfers are the user's own rules
+// (rules.js, edited in Settings), saved with the ledger.
 
 /* ============================== utilities ============================== */
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -445,8 +462,10 @@ function parseSheetTransactions(csvText) {
   return out;
 }
 function classifyFile(rows) {
+  // Salary and fixed bills only arrive in a bank account, so either marks one.
   const text = rows.map(r => r.description).join(" | ");
-  if (/One Account|HDB Housing Loan|IRAS Income Tax|iFAST FINANCIAL|GIRO SALA|Salary Payment/i.test(text)) return "UOB One";
+  const c = currentRules();
+  if (/One Account/i.test(text) || rows.some(r => c.isSalary(r.description) || c.fixedBillFor(r.description))) return "UOB One";
   const bank = rows[0] && rows[0].bank;
   if (bank === "POSB") return "POSB";
   if (bank === "DBS") return "DBS CC";
@@ -463,6 +482,12 @@ function currentCategoryHistory() {
   }
   return categoryHistory;
 }
+// Recompiled whenever appData.rules is replaced (a save or a sync).
+let rulesFor, compiledRules = null;
+function currentRules() {
+  if (!compiledRules || rulesFor !== appData.rules) { rulesFor = appData.rules; compiledRules = DuitRules.compileRules(appData.rules); }
+  return compiledRules;
+}
 const classifyOpex = description => DuitCategorise.classifyOpex(description, currentCategoryHistory());
 const resolveCategory = tx => DuitCategorise.resolveCategory(tx.description, tx.category, currentCategoryHistory());
 function monthKeyFromDate(dateStr) {
@@ -473,6 +498,7 @@ function monthKeyFromDate(dateStr) {
 
 /* ============================== aggregation ============================== */
 function buildMonths(cleanRows) {
+  const rules = currentRules();
   const byMonth = {};
   cleanRows.forEach(tx => {
     const month = monthKeyFromDate(tx.date);
@@ -481,32 +507,32 @@ function buildMonths(cleanRows) {
   });
   const months = {};
   Object.entries(byMonth).forEach(([month, txs]) => {
-    const bankTxs = txs.filter(t => BANK_TYPES.has(t.stmtType));
-    const cardTxs = txs.filter(t => CARD_TYPES.has(t.stmtType));
+    const bankTxs = txs.filter(t => isBankAccount(t.account));
+    const cardTxs = txs.filter(t => isCardAccount(t.account));
     let salaryIn = 0, otherIn = 0, giroOut = 0, otherOut = 0, cardSpend = 0;
-    const giroCategories = { "HDB Loan": 0, "TMLS (Insurance/Tax)": 0, "iFAST Investment": 0, "IRAS Income Tax": 0 };
+    const giroCategories = {};
     const otherCategories = {};
     const categories = {};
     const merchantTotals = {};
 
     bankTxs.forEach(tx => {
-      if (INTERBANK_TRANSFER_MATCH.test(tx.description)) return;
-      if (tx.type === "DR" && CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
-      const giro = tx.type === "DR" ? GIRO_KEYWORDS.find(g => g.match.test(tx.description)) : null;
-      if (giro) { giroOut += tx.amount; giroCategories[giro.key] += tx.amount; return; }
-      if (tx.type === "CR") { if (SALARY_MATCH.test(tx.description)) salaryIn += tx.amount; else otherIn += tx.amount; return; }
+      const route = DuitRules.routeBankTx(tx, rules);
+      if (route.kind === "skip") return;
+      if (route.kind === "fixed") { giroOut += tx.amount; giroCategories[route.name] = round2((giroCategories[route.name] || 0) + tx.amount); return; }
+      if (route.kind === "salary") { salaryIn += tx.amount; return; }
+      if (route.kind === "otherIn") { otherIn += tx.amount; return; }
       const label = resolveCategory(tx);
       if (label === "Credit Card Payment") return;
-      if (OTHER_CATEGORY_WHITELIST.has(label)) { otherOut += tx.amount; otherCategories[label] = round2((otherCategories[label] || 0) + tx.amount); }
+      if (rules.isOneOff(label)) { otherOut += tx.amount; otherCategories[label] = round2((otherCategories[label] || 0) + tx.amount); }
       else { cardSpend += tx.amount; categories[label] = round2((categories[label] || 0) + tx.amount); }
     });
 
     cardTxs.forEach(tx => {
-      if (CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
+      if (DuitRules.routeCardTx(tx, rules).kind === "skip") return;
       const signed = tx.type === "DR" ? tx.amount : -tx.amount;
       const cat = resolveCategory(tx);
       if (cat === "Credit Card Payment") return;
-      if (OTHER_CATEGORY_WHITELIST.has(cat)) { otherOut += signed; otherCategories[cat] = round2((otherCategories[cat] || 0) + signed); }
+      if (rules.isOneOff(cat)) { otherOut += signed; otherCategories[cat] = round2((otherCategories[cat] || 0) + signed); }
       else {
         cardSpend += signed; categories[cat] = round2((categories[cat] || 0) + signed);
         const merchant = tx.description || "Unknown";
@@ -515,7 +541,7 @@ function buildMonths(cleanRows) {
     });
 
     const topMerchants = Object.entries(merchantTotals).filter(([, a]) => a > 0).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, amt]) => ({ name, amt }));
-    const allTx = txs.map(t => ({ date: t.date, account: t.stmtType, description: t.description, withdrawal: t.type === "DR" ? t.amount : null, deposit: t.type === "CR" ? t.amount : null, category: t.category || null, file: t.file || null, ...spendFlags(t) }))
+    const allTx = txs.map(t => ({ date: t.date, account: t.account, description: t.description, withdrawal: t.type === "DR" ? t.amount : null, deposit: t.type === "CR" ? t.amount : null, category: t.category || null, file: t.file || null, ...spendFlags(t) }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
     months[month] = {
@@ -536,51 +562,34 @@ function sortMonthKeys(keys) {
 function syncFromText(csvText) {
   return syncFromRows(keepSpendFlags(parseSheetTransactions(csvText)));
 }
-// Rows from the PDF parsers already know their statement type. Only rows
-// without one (CSV and paste) fall back to guessing it from descriptions.
+// Rows from the PDF parsers already know their account. Only rows without
+// one (CSV and paste) fall back to guessing it from descriptions, as an
+// account with no number (bank-uob).
 function syncFromRows(rawRows) {
   const byFile = {};
-  rawRows.forEach(r => { if (!r.stmtType) (byFile[r.file] = byFile[r.file] || []).push(r); });
-  const fileType = {};
-  Object.entries(byFile).forEach(([file, rows]) => { fileType[file] = classifyFile(rows); });
-  const clean = rawRows.map(r => ({ ...r, stmtType: r.stmtType || fileType[r.file] }));
+  rawRows.forEach(r => { if (!r.account) (byFile[r.file] = byFile[r.file] || []).push(r); });
+  const fileAccount = {};
+  Object.entries(byFile).forEach(([file, rows]) => {
+    const type = classifyFile(rows);
+    fileAccount[file] = DuitAccounts.isLegacy(type) ? DuitAccounts.fromLegacy(type).id : type;
+  });
+  const clean = rawRows.map(r => ({ ...r, account: r.account || fileAccount[r.file] }));
   const monthTotals = buildMonths(clean);
   const monthKeys = sortMonthKeys(Object.keys(monthTotals));
   return monthKeys.map(k => monthTotals[k]);
 }
 
 // PDFs arrive a statement at a time, and a card statement spans two months,
-// so a PDF import can't replace whole months the way a full CSV does. Instead
-// each touched month is rebuilt from its saved transactions plus the new rows:
-// rows from a re-uploaded file replace that file's earlier rows, and rows saved
-// before transactions carried their file are matched one for one (so three
-// identical purchases stay three) on date, type, amount and description, then
-// on date, type, amount and account. Description goes first because older CSV
-// imports could mislabel the account (POSB saved as "UOB One"); digits are
-// ignored because older imports stripped merchant numbers. Any matched row
-// passes its category on, so hand-set categories survive a re-import.
-function txToRow(tx) {
-  const isDr = tx.withdrawal != null;
-  return { file: tx.file || "", date: tx.date, description: tx.description, amount: isDr ? tx.withdrawal : (tx.deposit || 0), type: isDr ? "DR" : "CR", category: tx.category || "", stmtType: tx.account, ...spendFlags(tx) };
-}
-const descKey = d => String(d || "").toUpperCase().replace(/[\d\s]+/g, "");
-const sameAmount = (a, b) => a.date === b.date && a.type === b.type && Math.abs(a.amount - b.amount) < 0.005;
-function matchOldRows(incoming, pool, flagsOnly) {
-  const tiers = [(o, r) => descKey(o.description) === descKey(r.description), (o, r) => o.stmtType === r.stmtType];
-  tiers.forEach(same => incoming.forEach(r => {
-    if (r.matched) return;
-    const old = pool.find(o => !o.matched && sameAmount(o, r) && same(o, r));
-    if (!old) return;
-    old.matched = r.matched = true;
-    if (!flagsOnly && !r.category && old.category) r.category = old.category;
-    if (!r.spendType && !r.suggestDismissed) Object.assign(r, spendFlags(old));
-  }));
-}
+// so a PDF import can't replace whole months the way a full CSV does. Each
+// touched month is rebuilt from its saved transactions plus the new rows
+// (accounts.js mergeMonth: same-file rows are replaced, older rows matched
+// one for one, categories carried over).
+const txToRow = DuitAccounts.txToRow;
 // A CSV or paste replaces whole months. One-off flags set in the app aren't in
 // the file, so carry them over from saved rows that match.
 function keepSpendFlags(rows) {
   const flagged = appData.months.flatMap(m => (m.transactions || []).filter(tx => tx.spendType || tx.suggestDismissed).map(txToRow));
-  if (flagged.length) matchOldRows(rows, flagged, true);
+  if (flagged.length) DuitAccounts.matchOldRows(rows, flagged, true);
   return rows.map(({ matched, ...r }) => r);
 }
 function planImport(newRows) {
@@ -593,25 +602,27 @@ function planImport(newRows) {
   Object.entries(byMonth).forEach(([month, incoming]) => {
     const prev = existing[month];
     if (prev && !(prev.transactions || []).length) manual.push(month);
-    const saved = prev ? (prev.transactions || []).map(txToRow) : [];
-    const sameFile = saved.filter(r => r.file && files.has(r.file));
-    const legacy = saved.filter(r => !r.file);
-    matchOldRows(incoming, sameFile.concat(legacy));
-    const keptLegacy = legacy.filter(r => !r.matched);
-    replaced += sameFile.length + legacy.length - keptLegacy.length;
-    rows.push(...saved.filter(r => r.file && !files.has(r.file)), ...keptLegacy, ...incoming.map(({ matched, ...r }) => r));
+    const merged = DuitAccounts.mergeMonth(prev ? prev.transactions : [], incoming, files);
+    replaced += merged.replaced;
+    rows.push(...merged.rows);
   });
   return { months: syncFromRows(rows), monthKeys: sortMonthKeys(Object.keys(byMonth)), manual, replaced };
 }
+// Months keep the totals worked out at import, so changed rules only show
+// once each imported month is rebuilt from its saved rows. Months entered by
+// hand have no rows and keep their totals.
+function rebuildMonths() {
+  const rows = appData.months.flatMap(m => (m.transactions || []).map(txToRow));
+  return rows.length ? syncFromRows(rows) : [];
+}
 function opexLineItems(months, category) {
+  const rules = currentRules();
   const rows = [];
   months.forEach(m => {
     if (!m.cardSpendAvailable) return;
     (m.transactions || []).forEach((tx, i) => {
-      if (INTERBANK_TRANSFER_MATCH.test(tx.description)) return;
-      if (CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
-      if (GIRO_KEYWORDS.some(g => g.match.test(tx.description))) return;
-      const isBank = BANK_TYPES.has(tx.account);
+      if (rules.isTransfer(tx.description) || rules.isCardBill(tx.description) || rules.fixedBillFor(tx.description)) return;
+      const isBank = isBankAccount(tx.account);
       if (isBank && tx.withdrawal == null) return;
       const amount = tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0);
       if (!amount) return;
@@ -637,21 +648,18 @@ function spendFlags(t) {
 }
 // What a saved row adds to its month's op-ex, mirroring buildMonths; null if it isn't op-ex.
 function opexRowAmount(tx, cat) {
-  if (CARD_TYPES.has(tx.account)) {
-    if (CARD_BILL_PAYMENT_MATCH.test(tx.description)) return null;
-    if (cat === "Credit Card Payment" || OTHER_CATEGORY_WHITELIST.has(cat)) return null;
-    return tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0);
-  }
-  if (!BANK_TYPES.has(tx.account) || tx.withdrawal == null) return null;
-  if (INTERBANK_TRANSFER_MATCH.test(tx.description) || CARD_BILL_PAYMENT_MATCH.test(tx.description)) return null;
-  if (GIRO_KEYWORDS.some(g => g.match.test(tx.description))) return null;
-  if (cat === "Credit Card Payment" || OTHER_CATEGORY_WHITELIST.has(cat)) return null;
-  return tx.withdrawal;
+  const rules = currentRules();
+  if (cat === "Credit Card Payment" || rules.isOneOff(cat)) return null;
+  const row = { description: tx.description, type: tx.withdrawal != null ? "DR" : "CR" };
+  if (isCardAccount(tx.account)) return DuitRules.routeCardTx(row, rules).kind === "skip" ? null : (tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0));
+  if (isBankAccount(tx.account) && DuitRules.routeBankTx(row, rules).kind === "spend") return tx.withdrawal;
+  return null;
 }
 const txKey = (month, idx) => `${month}|${idx}`;
-let oneOffFor = null, oneOff = null;
+// Rebuilt when the months or the rules are replaced.
+let oneOffFor = null, oneOffRules = null, oneOff = null;
 function oneOffModel() {
-  if (oneOffFor === appData.months && oneOff) return oneOff;
+  if (oneOff && oneOffFor === appData.months && oneOffRules === appData.rules) return oneOff;
   const rows = [];
   appData.months.forEach(m => (m.transactions || []).forEach((tx, i) => {
     const cat = resolveCategory(tx), amount = opexRowAmount(tx, cat);
@@ -662,7 +670,7 @@ function oneOffModel() {
   const suggestions = new Map();
   rows.forEach((r, i) => { if (guesses[i] && !r.tx.spendType && !r.tx.suggestDismissed) suggestions.set(r.key, guesses[i]); });
   const flagged = rows.filter(r => SPEND_TYPES[r.tx.spendType]).map(r => ({ ...r, type: r.tx.spendType, life: DuitCategorise.spreadLife(r.tx) }));
-  oneOffFor = appData.months;
+  oneOffFor = appData.months; oneOffRules = appData.rules;
   oneOff = { opexKeys, suggestions, flagged, core: new Map() };
   return oneOff;
 }
@@ -733,27 +741,31 @@ function netOpexAmount(m) { const g = opexAmount(m); return g != null ? round2(g
    page is hosted as a plain static site (e.g. GitHub Pages): there is no
    server and no account system here, so every visitor's data lives only
    in their own browser and is never sent anywhere. One document per month
-   (or per fixed commitment), keyed by a sanitized id, when db is active. */
+   (or per fixed commitment), keyed by a sanitized id, when db is active.
+   Rules are one document, "rules" in the settings collection. */
 let dbApi = null;
 const docIdForMonth = month => month.replace(/\s+/g, "_");
 const docIdForCommitment = name => name.replace(/[^\w-]+/g, "_") || "item";
 // Months saved before a category rename still carry the old labels in their
 // totals. Fold them into the current ones as they load.
 const canonMonth = m => (m && m.categories ? { ...m, categories: DuitCategorise.canonCategoryTotals(m.categories) } : m);
+// rules: null until the user saves their own, so the defaults apply.
+const emptyData = () => ({ months: [], fixedCommitments: {}, statements: {}, rules: null, accounts: {} });
 function loadLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) { const parsed = JSON.parse(raw); return { months: (parsed.months || []).map(canonMonth), fixedCommitments: parsed.fixedCommitments || {}, statements: parsed.statements || {} }; }
+    if (raw) { const parsed = JSON.parse(raw); return { months: (parsed.months || []).map(canonMonth), fixedCommitments: parsed.fixedCommitments || {}, statements: parsed.statements || {}, rules: parsed.rules || null, accounts: parsed.accounts || {} }; }
   } catch (e) {}
-  return { months: [], fixedCommitments: {}, statements: {} };
+  return emptyData();
 }
 function saveLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); } catch (e) {} }
 
-let appData = { months: [], fixedCommitments: {}, statements: {} };
+let appData = emptyData();
 let ui = {
   tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true,
   bucketOverview: "opex", bucketDeep: "opex", selectedCat: null,
-  sheet: null, // null | "add" | "paste" | "month" | "settings" | "statements"
+  sheet: null, // null | "add" | "paste" | "month" | "settings" | "rules" | "suggest" | "statements" | "accounts"
+  rulesDraft: null, suggestions: null, // rule edits wait here until saved
   customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null,
   storage: "connecting", // "connecting" | "synced" | "local"
 };
@@ -786,23 +798,50 @@ async function initPersistence() {
     dbApi = db;
     ui.storage = "synced";
     db.collection("months").onSnapshot(
-      snap => applySnapshotMonths(snap.docs.filter(d => d.exists).map(d => d.data())),
+      snap => { applySnapshotMonths(snap.docs.filter(d => d.exists).map(d => d.data())); migrateLoaded(); },
       err => { ui.storage = "local"; dbApi = null; appData = loadLocal(); resetPeriod(); ui.syncError = "Cross-device sync unavailable (" + err.message + ") — using this browser only."; render(); }
     );
     db.collection("fixedCommitments").onSnapshot(
       snap => applySnapshotFixed(snap.docs.filter(d => d.exists).map(d => d.data())),
       () => {}
     );
+    db.collection("settings").onSnapshot(
+      snap => { const doc = snap.docs.find(d => d.exists && d.id === "rules"); appData.rules = doc ? doc.data() : null; render(); },
+      () => {}
+    );
     db.collection("statements").onSnapshot(
-      snap => { const map = {}; snap.docs.filter(d => d.exists).forEach(d => { const r = d.data(); map[r.id] = r; }); appData.statements = map; render(); },
+      snap => { const map = {}; snap.docs.filter(d => d.exists).forEach(d => { const r = d.data(); map[r.id] = r; }); appData.statements = map; migrateLoaded(); render(); },
+      () => {}
+    );
+    db.collection("accounts").onSnapshot(
+      snap => { const map = {}; snap.docs.filter(d => d.exists).forEach(d => { const a = d.data(); map[a.id] = a; }); appData.accounts = map; render(); },
       () => {}
     );
   } else {
     ui.storage = "local";
     appData = loadLocal();
+    migrateLoaded();
     resetPeriod();
     render();
   }
+}
+// Data saved before accounts existed names accounts by statement type.
+// Rewritten once, in place (accounts.js migrate is idempotent, so a synced
+// snapshot that's already migrated changes nothing).
+function migrateLoaded() {
+  const res = DuitAccounts.migrate(appData);
+  if (!res.changed) return;
+  const changed = new Set(res.changedMonths);
+  appData.months = res.months; appData.statements = res.statements; appData.accounts = res.accounts;
+  if (!dbApi) { saveLocal(); return; }
+  const months = res.months.filter(m => changed.has(m.month));
+  const records = Object.values(res.statements).filter(r => r && r.source && !r.inferred);
+  Promise.all([
+    ...months.map(m => dbApi.collection("months").doc(docIdForMonth(m.month)).set(m)),
+    ...res.removedStatements.map(id => dbApi.collection("statements").doc(id).delete()),
+    ...records.map(r => dbApi.collection("statements").doc(r.id).set(r)),
+    ...res.addedAccounts.map(a => dbApi.collection("accounts").doc(a.id).set(a)),
+  ]).catch(err => { ui.syncError = "Couldn't update saved accounts: " + err.message; render(); });
 }
 // Writes months (an array of month objects) to whichever layer is active.
 // With db, each month is its own document — a paste only overwrites the
@@ -818,13 +857,29 @@ async function persistMonths(monthsArr) {
     resetPeriod();
   }
 }
-// One record per account per statement month, so a re-import replaces it.
+// One record per source per statement month, so a re-import replaces it,
+// along with any record it supersedes (statements.js supersededBy).
 async function persistStatements(records) {
+  const saved = Object.values(appData.statements || {});
+  const drop = [...new Set(records.flatMap(r => DuitStatements.supersededBy(saved, r)))];
   if (dbApi) {
     await Promise.all(records.map(r => dbApi.collection("statements").doc(r.id).set(r)));
+    await Promise.all(drop.map(id => dbApi.collection("statements").doc(id).delete()));
   } else {
     appData.statements = { ...appData.statements };
+    drop.forEach(id => { delete appData.statements[id]; });
     records.forEach(r => { appData.statements[r.id] = r; });
+    saveLocal();
+  }
+}
+// New accounts, or a rename or hide of one already saved.
+async function persistAccounts(list) {
+  if (!list.length) return;
+  if (dbApi) {
+    await Promise.all(list.map(a => dbApi.collection("accounts").doc(a.id).set(a)));
+  } else {
+    appData.accounts = { ...appData.accounts };
+    list.forEach(a => { appData.accounts[a.id] = a; });
     saveLocal();
   }
 }
@@ -833,6 +888,14 @@ async function persistFixedCommitment(name, amount) {
     await dbApi.collection("fixedCommitments").doc(docIdForCommitment(name)).set({ name, amount });
   } else {
     appData.fixedCommitments[name] = amount;
+    saveLocal();
+  }
+}
+async function persistRules(rules) {
+  if (dbApi) {
+    await dbApi.collection("settings").doc("rules").set(rules);
+  } else {
+    appData.rules = rules;
     saveLocal();
   }
 }
@@ -852,8 +915,12 @@ async function clearAllData() {
     await Promise.all(fsnap.docs.map(d => dbApi.collection("fixedCommitments").doc(d.id).delete()));
     const ssnap = await dbApi.collection("statements").get();
     await Promise.all(ssnap.docs.map(d => dbApi.collection("statements").doc(d.id).delete()));
+    const rsnap = await dbApi.collection("settings").get();
+    await Promise.all(rsnap.docs.map(d => dbApi.collection("settings").doc(d.id).delete()));
+    const asnap = await dbApi.collection("accounts").get();
+    await Promise.all(asnap.docs.map(d => dbApi.collection("accounts").doc(d.id).delete()));
   } else {
-    appData = { months: [], fixedCommitments: {}, statements: {} };
+    appData = emptyData();
     saveLocal();
   }
 }
@@ -939,11 +1006,14 @@ function renderNav() {
   return `${nav}<button class="fab ${fabHidden ? "hidden" : ""}" data-action="open-add" aria-label="Add data" title="Add data">${ICON(ICONS.plus, 24)}</button>`;
 }
 
-// Which sheet shows. Settings sits over a PDF review, so a key can be added
-// mid-import and closing Settings returns to the review.
+// Which sheet shows. Settings and its rules sit over a PDF review, so a key
+// can be added mid-import and closing Settings returns to the review.
 function renderSheet() {
   let key = null, title = "", body = "", closable = true;
   if (ui.sheet === "settings") { key = "settings"; title = "Settings"; body = renderSettings(); }
+  else if (ui.sheet === "rules" && ui.rulesDraft) { key = "rules"; title = "Transaction rules"; body = renderRules(); }
+  else if (ui.sheet === "accounts") { key = "accounts"; title = "Accounts"; body = renderAccounts(); }
+  else if (ui.sheet === "suggest" && ui.rulesDraft) { key = "suggest"; title = "Suggested fixed bills"; body = renderSuggestions(); }
   else if (ui.pdfImport) { key = "pdf"; title = "Review PDF import"; body = renderPdfReview(); closable = false; }
   else if (ui.sheet === "add") { key = "add"; title = "Add data"; body = renderAddMenu(); }
   else if (ui.sheet === "paste") { key = "paste"; title = "Paste or upload a table"; body = renderPastePanel(); }
@@ -1003,7 +1073,7 @@ function renderPdfReview() {
     return `
     <div class="pdf-file">
       <label class="pdf-head"><input type="checkbox" data-action="pdf-toggle-file" data-idx="${i}" ${f.include ? "checked" : ""}><strong>${esc(f.file)}</strong></label>
-      <div class="pdf-meta">${esc(f.label)}${f.readBy === "gemini" ? ` <span class="pdf-tag" title="${esc(f.model)}">Read by Gemini</span>` : ""} &middot; statement ${esc(f.statementDate)} &middot; ${f.rows.length} row${f.rows.length !== 1 ? "s" : ""}${allOk ? "" : " &middot; <strong>totals don't match, so it's unticked</strong>"}</div>
+      <div class="pdf-meta">${esc((f.accounts || []).map(a => (appData.accounts[a.id] || a).name).join(", ") || f.label)}${f.readBy === "gemini" ? ` <span class="pdf-tag" title="${esc(f.model)}">Read by Gemini</span>` : ""} &middot; statement ${esc(f.statementDate)} &middot; ${f.rows.length} row${f.rows.length !== 1 ? "s" : ""}${allOk ? "" : " &middot; <strong>totals don't match, so it's unticked</strong>"}</div>
       <div class="pdf-checks">${checks}</div>
       <button class="btn small ghost" data-action="pdf-toggle-rows" data-idx="${i}" style="margin-top:8px;">${f.open ? "Hide rows" : "Show rows"}</button>
       ${table}
@@ -1064,7 +1134,117 @@ function renderSettings() {
     <p class="paste-help" style="margin:12px 0 0;">The setup link carries your key, so treat it like a password. Opening it on another device saves the key there and removes it from the address bar. Anyone holding it can spend your key.</p>
     <p class="paste-help" style="margin:8px 0 0;">${DuitGemini.hasConsent() ? "You've agreed to send statement text to Google on this device." : "You'll be asked before any statement text is first sent to Google."}</p>
   </div>
+  <div class="section-label">Rules</div>
+  <button class="action-row" data-action="open-rules">Transaction rules<span>Fixed bills, salary, one-offs, card payments and transfers.</span></button>
+  <button class="action-row" data-action="open-sheet" data-sheet="accounts">Accounts<span>Rename your accounts and cards, or hide ones you've closed.</span></button>
   ${renderDataSettings()}`;
+}
+
+/* ============================== accounts ============================== */
+// Grouped by statement source. A name saves when the field loses focus;
+// clearing it restores the default. Hidden accounts stay in every total.
+function renderAccounts() {
+  const list = Object.values(appData.accounts || {});
+  if (!list.length) return `<p class="paste-help">No accounts yet. They're added as you import statements.</p>`;
+  const bySource = {};
+  list.forEach(a => { const s = DuitAccounts.sourceOf(a.id); (bySource[s] = bySource[s] || []).push(a); });
+  const order = Object.keys(bySource).sort((a, b) => (a.startsWith("bank-") ? 0 : 1) - (b.startsWith("bank-") ? 0 : 1) || a.localeCompare(b));
+  const groups = order.map(src => {
+    const first = bySource[src][0];
+    const rows = bySource[src].sort((a, b) => String(a.number || "").localeCompare(String(b.number || ""))).map(a => `
+    <div class="acct-row${a.hidden ? " hidden-acct" : ""}">
+      <input type="text" class="acct-name" data-id="${esc(a.id)}" value="${esc(a.name || DuitAccounts.defaultName(a))}" aria-label="Name for ${esc(DuitAccounts.defaultName(a))}" maxlength="40" autocomplete="off">
+      <label class="acct-hide"><input type="checkbox" class="acct-hidden" data-id="${esc(a.id)}" ${a.hidden ? "checked" : ""}> Hide</label>
+    </div>
+    <p class="acct-meta">${a.number ? `${esc(first.bank)} ${a.kind === "card" ? "card" : "account"} ending ${esc(a.number)}` : "From imports before account numbers were read"}</p>`).join("");
+    return `<div class="section-label">${esc(`${first.bank} ${first.kind === "card" ? "cards" : "accounts"}`)}</div>${rows}`;
+  }).join("");
+  return `
+  <p class="paste-help">Accounts are added as you import statements, named by bank and the last 4 digits. Hiding one takes it out of the Statements list and its reminders. Its transactions still count.</p>
+  ${groups}`;
+}
+function saveAccountEdit(id, patch) {
+  const a = appData.accounts[id];
+  if (!a) return;
+  const next = { ...a, ...patch };
+  if ("name" in patch && !String(patch.name).trim()) next.name = DuitAccounts.defaultName(a);
+  if (next.name === a.name && !!next.hidden === !!a.hidden) return;
+  persistAccounts([next]).then(render).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
+}
+
+/* ============================== rules ============================== */
+// Edits collect in ui.rulesDraft. Saving rebuilds every imported month once.
+const RULE_LISTS = [
+  ["salary", "Salary", "Keyword or /regex/", "Credits that count as salary."],
+  ["oneOffCategories", "One-off categories", "Category name", "Matches category labels, not descriptions. Kept out of op-ex."],
+  ["cardBillPayments", "Card bill payments", "Keyword or /regex/", "Skipped, so card spend isn't counted twice."],
+  ["internalTransfers", "Internal transfers", "Keyword or /regex/", "Skipped. Add your own name to catch PayNow to yourself."],
+];
+const rulesKey = r => JSON.stringify({ ...r, updatedAt: null });
+function ruleChip(list, value, i) {
+  const bad = list !== "oneOffCategories" && DuitRules.patternError(value);
+  return `<span class="rule-chip ${bad ? "bad" : ""}" ${bad ? `title="${esc(bad)}"` : ""}><span class="rule-match">${esc(value)}</span><button class="icon-btn" data-action="rules-remove" data-list="${list}" data-idx="${i}" aria-label="Remove ${esc(value)}">${ICON(ICONS.close, 16)}</button></span>`;
+}
+function renderRules() {
+  const d = ui.rulesDraft;
+  const dirty = rulesKey(d) !== rulesKey(DuitRules.normaliseRules(appData.rules));
+  const imported = appData.months.filter(m => (m.transactions || []).length).length;
+  const manual = appData.months.length - imported;
+  const bills = d.fixedBills.map((b, i) => `
+    <div class="rule-row ${DuitRules.patternError(b.match) ? "bad" : ""}">
+      <span class="rule-name">${esc(b.name)}</span><span class="rule-match">${esc(b.match)}</span>
+      <button class="icon-btn" data-action="rules-remove" data-list="fixedBills" data-idx="${i}" aria-label="Remove ${esc(b.name)}">${ICON(ICONS.close, 16)}</button>
+    </div>`).join("");
+  const lists = RULE_LISTS.map(([list, label, placeholder, help]) => {
+    const locked = list === "oneOffCategories" ? DuitRules.BUILT_IN_ONE_OFF.map(c => `<span class="rule-chip locked" title="Built in">${esc(c)}</span>`).join("") : "";
+    return `
+    <div class="section-label">${esc(label)}</div>
+    <p class="paste-help">${esc(help)}</p>
+    <div class="rule-chips">${locked}${d[list].map((v, i) => ruleChip(list, v, i)).join("") || (locked ? "" : `<span class="paste-help" style="margin:0;">None yet.</span>`)}</div>
+    <div class="rule-add"><input type="text" id="rule-input-${list}" aria-label="New ${esc(label.toLowerCase())}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false"><button class="btn small" data-action="rules-add" data-list="${list}">Add</button></div>`;
+  }).join("");
+  return `
+  ${appData.rules ? "" : `<p class="paste-help"><strong>Starter rules for Singapore banks.</strong> Edit them to fit your accounts.</p>`}
+  <p class="paste-help">Text matches anywhere, in any case. Wrap it in /…/ for a regex.</p>
+  <div class="section-label">Fixed bills</div>
+  <p class="paste-help">Bank debits counted as fixed, by name.</p>
+  ${bills || `<p class="paste-help">None yet.</p>`}
+  <div class="rule-add" style="margin-top:12px;">
+    <input type="text" id="rule-bill-name" aria-label="Bill name" placeholder="Name" autocomplete="off">
+    <input type="text" id="rule-bill-match" aria-label="Bill keyword" placeholder="Keyword or /regex/" autocomplete="off" spellcheck="false">
+    <button class="btn small" data-action="rules-add-bill">Add</button>
+  </div>
+  <div class="btn-row"><button class="btn" data-action="rules-suggest" ${imported ? "" : "disabled"}>Suggest from my transactions</button></div>
+  ${lists}
+  <div class="sheet-foot">
+    <p>${imported ? `Saving rebuilds ${imported} imported month${imported !== 1 ? "s" : ""}.` : "No imported months to rebuild."}</p>
+    ${manual ? `<p>${manual} month${manual !== 1 ? "s" : ""} entered by hand keep${manual === 1 ? "s" : ""} ${manual === 1 ? "its" : "their"} totals.</p>` : ""}
+    <div class="btn-row">
+      <button class="btn ghost" data-action="rules-discard" ${dirty ? "" : "disabled"}>Discard</button>
+      <button class="btn primary" data-action="rules-save" ${dirty || !appData.rules ? "" : "disabled"}>Save rules</button>
+    </div>
+  </div>`;
+}
+function renderSuggestions() {
+  const list = ui.suggestions || [];
+  const cards = list.map((s, i) => `
+    <div class="suggest-card">
+      <div class="rule-add">
+        <input type="text" id="sg-name-${i}" aria-label="Bill name" value="${esc(s.name)}" autocomplete="off">
+        <input type="text" id="sg-match-${i}" aria-label="Bill keyword" value="${esc(s.match)}" autocomplete="off" spellcheck="false">
+      </div>
+      <p class="settings-meta"><span class="num">~${esc(fmt(s.avg))}/mo</span> &middot; ${s.months} months</p>
+      <p class="settings-meta">${esc(s.example)}</p>
+      <div class="btn-row">
+        <button class="btn ghost" data-action="suggest-skip" data-idx="${i}">Skip</button>
+        <button class="btn primary" data-action="suggest-add" data-idx="${i}">Add</button>
+      </div>
+    </div>`).join("");
+  return `
+  <p class="paste-help">Bank debits seen in 3 or more months at a similar amount.</p>
+  ${cards || `<p class="paste-help">Nothing else recurs yet.</p>`}
+  <p class="paste-help">Added bills apply when you save rules.</p>
+  <div class="btn-row"><button class="btn" data-action="open-sheet" data-sheet="rules">Back to rules</button></div>`;
 }
 // What used to sit in the header subtitle and the page footer.
 function renderDataSettings() {
@@ -1194,8 +1374,9 @@ function renderPeriod(from, to, count) {
 }
 
 // A month whose card statements are missing reads as a big drop in spend.
-// Spot it from the card accounts seen in the three months before it.
-function cardAccounts(m) { return new Set((m.transactions || []).map(t => t.account).filter(a => CARD_TYPES.has(a))); }
+// Spot it from the card statement sources seen in the three months before
+// it. Sources, not cards: a new card on the same statement isn't missing.
+function cardAccounts(m) { return new Set((m.transactions || []).map(t => t.account).filter(isCardAccount).map(DuitAccounts.sourceOf)); }
 function missingCards(m) {
   if (!m.cardSpendAvailable || !(m.transactions || []).length) return [];
   const i = appData.months.findIndex(x => x.month === m.month);
@@ -1210,12 +1391,12 @@ function isConfirmed(m) { return m.cardSpendAvailable && !missingCards(m).length
 function partialMonths(months) { return months.filter(m => m.cardSpendAvailable && missingCards(m).length).map(m => m.month); }
 // Which statements are in, from saved records plus older imports inferred
 // from their transactions (statements.js).
-const statementCoverage = () => DuitStatements.coverage(Object.values(appData.statements || {}), appData.months);
+const statementCoverage = () => DuitStatements.coverage(Object.values(appData.statements || {}), appData.months, null, { hidden: src => DuitAccounts.sourceHidden(src, appData.accounts) });
 const shortDate = ms => { const d = new Date(ms); return `${d.getUTCDate()} ${MONTH_ORDER[d.getUTCMonth()]}`; };
 function renderStatementStrip() {
   const issues = DuitStatements.recentIssues(statementCoverage());
   if (!issues.length) return "";
-  const shown = issues.slice(-4).reverse().map(x => `<strong>${esc(x.account)}</strong> ${esc(x.month)} ${x.kind === "due" ? "due" : "missing"}`);
+  const shown = issues.slice(-4).reverse().map(x => `<strong>${esc(sourceLabel(x.account))}</strong> ${esc(x.month)} ${x.kind === "due" ? "due" : "missing"}`);
   const more = issues.length > 4 ? ` and ${issues.length - 4} more` : "";
   return `<div class="card nudge"><p>Statements to import: ${shown.join(" &middot; ")}${more}.</p><div class="btn-row" style="margin-top:0;"><button class="btn small" data-action="open-sheet" data-sheet="statements">View</button><button class="btn small primary" data-action="open-add">Import</button></div></div>`;
 }
@@ -1229,12 +1410,12 @@ function statementCell(cell) {
 function renderStatements() {
   const cov = statementCoverage();
   if (!cov.accounts.length) return `<div class="card"><p class="paste-help" style="margin:0;">No statements imported yet. Import a PDF and it shows up here.</p></div>`;
-  const head = cov.accounts.map(a => `<th class="c">${esc(a.name)}</th>`).join("");
+  const head = cov.accounts.map(a => `<th class="c">${esc(sourceLabel(a.name))}</th>`).join("");
   const body = cov.months.map(m => `<tr><th scope="row">${esc(m)}</th>${cov.accounts.map(a => statementCell(cov.cells[a.name][m])).join("")}</tr>`).join("");
-  const summary = cov.accounts.map(a => `<div class="pdf-check ${a.overdue ? "bad" : "ok"}">${a.overdue ? CROSS_ICON : CHECK_ICON}<span><strong>${esc(a.name)}</strong>: latest ${esc(a.last.statementDate)}${a.overdue ? ", next one overdue" : a.nextDue ? `, next around ${esc(shortDate(a.nextDue))}` : ""}</span></div>`).join("");
+  const summary = cov.accounts.map(a => `<div class="pdf-check ${a.overdue ? "bad" : "ok"}">${a.overdue ? CROSS_ICON : CHECK_ICON}<span><strong>${esc(sourceLabel(a.name))}</strong>: latest ${esc(a.last.statementDate)}${a.overdue ? ", next one overdue" : a.nextDue ? `, next around ${esc(shortDate(a.nextDue))}` : ""}</span></div>`).join("");
   return `
   <div class="card">
-    <p class="paste-help">One statement per account per month, by statement date. A card cycle ending 12 Sep counts as Sep.</p>
+    <p class="paste-help">One row per statement, so a card statement covering several cards is one row. Each month is by statement date: a card cycle ending 12 Sep counts as Sep.</p>
     <div class="scroll-x ledger-wrap"><table class="ledger stmt-grid">
       <thead><tr><th>Month</th>${head}</tr></thead>
       <tbody>${body}</tbody>
@@ -1296,7 +1477,7 @@ function renderOverview(filtered) {
   const delta = (prev && isConfirmed(prev) && isConfirmed(latest)) ? pct(opexAmount(latest), opexAmount(prev)) : null;
   const tone = delta > 15 ? "warn" : delta < -15 ? "ok" : "";
   const latestSub = !latest.cardSpendAvailable ? "no card stmt yet"
-    : latestMissing.length ? `partial: no ${latestMissing.join(", ")} yet`
+    : latestMissing.length ? `partial: no ${latestMissing.map(sourceLabel).join(", ")} yet`
     : delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—";
   const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
   const inPeriod = new Set(filtered.map(m => m.month));
@@ -1472,7 +1653,7 @@ function renderDeepDive(filtered) {
     ${cats.length === 0 ? `<div style="font-size:14px;color:var(--text-2);padding:8px 0;">No data for this view.</div>` : catRows}
   </div>
   ${merchMonths.length ? `<div class="card"><p class="card-title">Top merchants &middot; ${esc(merchPeriod)} &middot; credit cards</p>
-    <div style="font-size:14px;color:var(--text-2);margin-bottom:12px;">DBS + UOB credit cards only. Debit, NETS, PayNow not captured here.</div>
+    <div style="font-size:14px;color:var(--text-2);margin-bottom:12px;">Credit cards only. Debit, NETS and PayNow aren't counted here.</div>
     ${merchRows}</div>` : ""}
   ${renderFixedCommitments()}`;
 }
@@ -1533,7 +1714,7 @@ function renderAddMonth() {
       <div class="field"><label>Salary in</label><input type="number" inputmode="decimal" id="f-salaryIn" placeholder="0"></div>
       <div class="field"><label>Other income</label><input type="number" inputmode="decimal" id="f-otherIn" placeholder="0"></div>
       <div class="field"><label>Total card spend</label><input type="number" inputmode="decimal" id="f-cardSpend" placeholder="0"></div>
-      <div class="field"><label>GIRO / fixed out</label><input type="number" inputmode="decimal" id="f-giroOut" placeholder="0"></div>
+      <div class="field"><label>Fixed bills out</label><input type="number" inputmode="decimal" id="f-giroOut" placeholder="0"></div>
       <div class="field"><label>Other one-off out</label><input type="number" inputmode="decimal" id="f-otherOut" placeholder="0"></div>
     </div>
     <div class="section-label">Card category breakdown</div>
@@ -1557,8 +1738,8 @@ function renderTxns() {
 function renderTxList() {
   const q = (ui.txQuery || "").trim().toLowerCase();
   const all = periodMonths().filtered.flatMap(m => (m.transactions || []).map((tx, i) => ({ ...tx, cat: resolveCategory(tx), key: txKey(m.month, i) })))
-    .filter(tx => !(ui.hideIncome && tx.deposit != null && SALARY_MATCH.test(tx.description)))
-    .filter(tx => !q || [tx.description, tx.cat, tx.account].some(v => String(v || "").toLowerCase().includes(q)))
+    .filter(tx => !(ui.hideIncome && tx.deposit != null && currentRules().isSalary(tx.description)))
+    .filter(tx => !q || [tx.description, tx.cat, accountLabel(tx.account)].some(v => String(v || "").toLowerCase().includes(q)))
     .sort((a, b) => dateKey(b.date) - dateKey(a.date));
   if (!all.length) return `<div style="font-size:14px;color:var(--text-2);padding:16px 0;">${q ? "No transactions match." : "No line items in this period. Months entered by hand have totals only."}</div>`;
   const out = all.reduce((s, t) => s + (t.withdrawal || 0), 0), inn = all.reduce((s, t) => s + (t.deposit || 0), 0);
@@ -1571,7 +1752,7 @@ function renderTxList() {
     const c = spendControls(tx.key, tx);
     const editable = oneOffModel().opexKeys.has(tx.key);
     return `${head}<div class="tx-row">
-      <div class="tx-main" ${editable ? `data-action="edit-spend" data-key="${esc(tx.key)}"` : ""}><div class="tx-desc">${esc(tx.description)}</div><div class="tx-meta">${esc(tx.cat)} &middot; ${esc(tx.account)}</div>${c.tag ? `<div class="tx-flags">${c.tag}</div>` : ""}</div>
+      <div class="tx-main" ${editable ? `data-action="edit-spend" data-key="${esc(tx.key)}"` : ""}><div class="tx-desc">${esc(tx.description)}</div><div class="tx-meta">${esc(tx.cat)} &middot; ${esc(accountLabel(tx.account))}</div>${c.tag ? `<div class="tx-flags">${c.tag}</div>` : ""}</div>
       <span class="tx-amt ${isIn ? "in" : ""}">${isIn ? "+" : ""}${esc(fmt(isIn ? tx.deposit : tx.withdrawal))}</span>
     </div>${c.editor}`;
   }).join("");
@@ -1613,6 +1794,7 @@ function watchForUpdates() {
 
 /* ============================== events ============================== */
 let wired = false;
+const OVER_IMPORT = new Set(["settings", "rules", "suggest", "accounts"]);
 function wireOnce() {
   if (wired) return; wired = true;
   const root = document.getElementById("app");
@@ -1625,7 +1807,7 @@ function wireOnce() {
     const list = document.getElementById("tx-list");
     if (list) list.innerHTML = renderTxList();
   });
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && (ui.sheet || ui.pdfImport) && !(ui.pdfImport && ui.sheet !== "settings")) { ui.sheet = null; render(); } });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && (ui.sheet || ui.pdfImport) && !(ui.pdfImport && !OVER_IMPORT.has(ui.sheet))) { ui.sheet = null; render(); } });
   // The FAB hides while scrolling down through content and returns on scroll up.
   let lastY = window.scrollY;
   window.addEventListener("scroll", () => {
@@ -1656,6 +1838,8 @@ function onChange(e) {
     reader.readAsText(file);
     t.value = "";
   }
+  else if (t.classList.contains("acct-name")) saveAccountEdit(t.getAttribute("data-id"), { name: t.value.trim().slice(0, 40) });
+  else if (t.classList.contains("acct-hidden")) saveAccountEdit(t.getAttribute("data-id"), { hidden: t.checked });
   else if (t.id === "pdf-file-input") {
     const files = t.files;
     startPdfImport(files).catch(err => { ui.pdfImport = null; ui.syncError = "PDF import failed: " + err.message; render(); });
@@ -1674,6 +1858,16 @@ function ingestText(text, sourceSuffix, fromPaste) {
     showToast(`Loaded ${parsedMonths.length} month${parsedMonths.length !== 1 ? "s" : ""}${sourceSuffix}.`);
     render();
   }).catch(err => { ui.syncError = "Couldn't save that: " + err.message; if (fromPaste) ui.pasteDraft = text; render(); });
+}
+// Adds to the draft. False, with a toast, when the bill can't be added.
+function addFixedBill(name, match) {
+  const d = ui.rulesDraft;
+  if (!name || !match) { showToast("Enter a name and a keyword."); return false; }
+  const err = DuitRules.patternError(match);
+  if (err) { showToast(`${err}.`); return false; }
+  if (d.fixedBills.some(b => b.name.toUpperCase() === name.toUpperCase())) { showToast("A bill with that name exists."); return false; }
+  d.fixedBills.push({ name, match });
+  return true;
 }
 function onClick(e) {
   const btn = e.target.closest("[data-action]");
@@ -1757,6 +1951,67 @@ function onClick(e) {
     else if (!DuitGemini.hasConsent()) { f.askConsent = true; render(); return; }
     readWithGemini(f).catch(err => { f.geminiBusy = false; f.geminiError = "Gemini read failed: " + err.message; render(); });
   }
+  else if (action === "open-rules") {
+    if (!ui.rulesDraft) ui.rulesDraft = DuitRules.normaliseRules(appData.rules);
+    ui.sheet = "rules"; render();
+  }
+  else if (action === "rules-add" || action === "rules-add-bill") {
+    const d = ui.rulesDraft;
+    if (!d) return;
+    if (action === "rules-add-bill") {
+      const name = (document.getElementById("rule-bill-name").value || "").trim();
+      const match = (document.getElementById("rule-bill-match").value || "").trim();
+      if (!addFixedBill(name, match)) return;
+    } else {
+      const list = btn.getAttribute("data-list");
+      const value = (document.getElementById(`rule-input-${list}`).value || "").trim();
+      if (!value) { showToast("Type something first."); return; }
+      const err = list !== "oneOffCategories" && DuitRules.patternError(value);
+      if (err) { showToast(`${err}.`); return; }
+      if (d[list].some(v => v.toUpperCase() === value.toUpperCase()) || (list === "oneOffCategories" && DuitRules.BUILT_IN_ONE_OFF.includes(value))) { showToast("Already in the list."); return; }
+      d[list].push(value);
+    }
+    render();
+  }
+  else if (action === "rules-remove") {
+    const d = ui.rulesDraft, list = btn.getAttribute("data-list");
+    if (!d || !d[list]) return;
+    d[list].splice(Number(btn.getAttribute("data-idx")), 1);
+    render();
+  }
+  else if (action === "rules-discard") { ui.rulesDraft = DuitRules.normaliseRules(appData.rules); render(); }
+  else if (action === "rules-suggest") {
+    if (!ui.rulesDraft) return;
+    const txs = appData.months.flatMap(m => m.transactions || []);
+    ui.suggestions = DuitRules.suggestFixedBills(txs, ui.rulesDraft, { isBank: isBankAccount });
+    ui.sheet = "suggest"; render();
+  }
+  else if (action === "suggest-add" || action === "suggest-skip") {
+    const i = Number(btn.getAttribute("data-idx"));
+    if (!ui.suggestions || !ui.suggestions[i]) return;
+    if (action === "suggest-add") {
+      const name = (document.getElementById(`sg-name-${i}`).value || "").trim();
+      const match = (document.getElementById(`sg-match-${i}`).value || "").trim();
+      if (!addFixedBill(name, match)) return;
+      showToast(`${name} added. Save rules to apply.`);
+    }
+    ui.suggestions.splice(i, 1);
+    render();
+  }
+  else if (action === "rules-save") {
+    if (!ui.rulesDraft) return;
+    const next = { ...DuitRules.normaliseRules(ui.rulesDraft), updatedAt: new Date().toISOString() };
+    const prev = appData.rules;
+    btn.disabled = true; btn.textContent = "Saving…";
+    // Set before the rebuild so it uses the new rules. With db, the snapshot confirms it.
+    appData.rules = next;
+    const rebuilt = rebuildMonths();
+    persistRules(next).then(() => rebuilt.length ? persistMonths(rebuilt) : null).then(() => {
+      ui.rulesDraft = null; ui.suggestions = null; ui.sheet = "settings"; ui.syncError = null;
+      showToast(rebuilt.length ? `Rules saved. ${rebuilt.length} month${rebuilt.length !== 1 ? "s" : ""} rebuilt.` : "Rules saved.");
+      render();
+    }).catch(err => { appData.rules = prev; ui.syncError = "Couldn't save rules: " + err.message; render(); });
+  }
   else if (action === "open-settings") { ui.sheet = "settings"; ui.keyTest = null; render(); }
   else if (action === "save-key") {
     const input = document.getElementById("gemini-key-input");
@@ -1793,7 +2048,8 @@ function onClick(e) {
     btn.disabled = true; btn.textContent = "Importing…";
     const importedAt = new Date().toISOString();
     const records = st.files.filter(f => f.include).map(f => DuitStatements.recordFromImport(f, importedAt)).filter(Boolean);
-    persistMonths(planImport(rows).months).then(() => persistStatements(records)).then(() => {
+    const found = DuitAccounts.register(appData.accounts, st.files.filter(f => f.include).flatMap(f => f.accounts || [])).added;
+    persistAccounts(found).then(() => persistMonths(planImport(rows).months)).then(() => persistStatements(records)).then(() => {
       ui.pdfImport = null; ui.sheet = null; ui.syncError = null;
       if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
       showToast(`Imported ${rows.length} rows from ${fileCount} file${fileCount !== 1 ? "s" : ""}.`);
@@ -1814,7 +2070,7 @@ function onClick(e) {
       cardSpend: available ? cardSpend : null, cardSpendAvailable: available,
       giroOut, otherOut, totalOut: available ? cardSpend + giroOut + otherOut : round2(giroOut + otherOut),
       categories: available ? categories : null,
-      giroCategories: { ...DEFAULT_GIRO }, otherCategories: {}, topMerchants: [], transactions: [],
+      giroCategories: {}, otherCategories: {}, topMerchants: [], transactions: [],
     };
     btn.disabled = true; btn.textContent = "Saving…";
     persistMonths([newMonth]).then(() => {

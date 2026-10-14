@@ -11,6 +11,8 @@
 (function (root) {
 "use strict";
 
+const Acc = typeof module === "object" && module.exports ? require("./accounts.js") : root.DuitAccounts;
+
 const PDFJS_BASE = "vendor/pdfjs-4.10.38/";
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const AMOUNT_RE = /^-?[\d,]*\d\.\d\d(\s*CR)?$/i;
@@ -177,14 +179,14 @@ function parseBankTable(pages, opts) {
         const isDr = byCol.w != null;
         const amt = isDr ? byCol.w : byCol.d;
         if (isDr) acct.sumW += amt; else acct.sumD += amt;
-        state.cur = { date: fullDate(d.day, d.mon, opts.ctx), description: descriptionOf(d.rest), amount: amt / 100, type: isDr ? "DR" : "CR" };
+        state.cur = { date: fullDate(d.day, d.mon, opts.ctx), description: descriptionOf(d.rest), amount: amt / 100, type: isDr ? "DR" : "CR", number: Acc.last4(acct.no) };
         rows.push(state.cur); state.lastY = line.y;
         return;
       }
       if (!continuation(state, line, descX)) state.cur = null;
     });
   });
-  return { rows, checks: bankAccountChecks(accounts, opts.name) };
+  return { rows, checks: bankAccountChecks(accounts, opts.name), numbers: Object.keys(accounts).map(Acc.last4) };
 }
 
 function parseDbsDeposit(pages, text) {
@@ -197,7 +199,7 @@ function parseDbsDeposit(pages, text) {
     opening: /^Balance Brought Forward/, closing: /^Balance Carried Forward/, total: /^Total$/,
     stop: /^PDS_|^Message For You/,
   });
-  return { bank, stmtType: "POSB", label: `${bank} account`, statementDate: ctx.label, ...res };
+  return { bank, kind: "bank", label: `${bank} account`, statementDate: ctx.label, ...res };
 }
 
 function parseUobAccount(pages, text) {
@@ -209,7 +211,7 @@ function parseUobAccount(pages, text) {
     opening: /BALANCE B\/F/, closing: null, total: /^Total$/, closingOnTotal: true,
     stop: /End of Transaction Details|^Page \d+ of \d+/,
   });
-  return { bank: "UOB", stmtType: "UOB One", label: "UOB account", statementDate: ctx.label, ...res };
+  return { bank: "UOB", kind: "bank", label: "UOB account", statementDate: ctx.label, ...res };
 }
 
 /* ---------------------------- credit cards ---------------------------- */
@@ -226,7 +228,7 @@ function addCardRow(state, card, d, line, ctx) {
   const crItem = line.items.find(i => /^CR$/i.test(i.str) && i.x >= amt.x);
   const signed = cents(amt.str) * (crItem ? -1 : 1);
   if (signed < 0) card.cr -= signed; else card.dr += signed;
-  state.cur = { date: fullDate(d.day, d.mon, ctx), description: descriptionOf(d.rest), amount: Math.abs(signed) / 100, type: signed < 0 ? "CR" : "DR" };
+  state.cur = { date: fullDate(d.day, d.mon, ctx), description: descriptionOf(d.rest), amount: Math.abs(signed) / 100, type: signed < 0 ? "CR" : "DR", number: card.number };
   state.lastY = line.y;
   return state.cur;
 }
@@ -244,7 +246,7 @@ function parseDbsCard(pages, text) {
       const hDesc = /^DATE DESCRIPTION/.test(t) && itemByText(line, /^DESCRIPTION$/);
       if (hDesc) { descX = hDesc.x; return; }
       const cm = t.match(/^(.*?)\s*CARD NO\.:\s*([\d ]+)$/);
-      if (cm) { card = { name: cm[1].trim() || cm[2].trim(), prev: 0, cr: 0, dr: 0, total: null }; cards.push(card); state.cur = null; return; }
+      if (cm) { card = { name: cm[1].trim() || cm[2].trim(), number: Acc.last4(cm[2]), prev: 0, cr: 0, dr: 0, total: null }; cards.push(card); state.cur = null; return; }
       if (/GRAND TOTAL FOR ALL CARD ACCOUNTS/.test(t)) { const a = lastAmount(line); if (a) grand = cents(a.str); done = true; return; }
       if (!card) return;
       if (/^PREVIOUS BALANCE/.test(t)) { const a = lastAmount(line); if (a) card.prev = cents(a.str) * (/CR$/i.test(t) ? -1 : 1); state.cur = null; return; }
@@ -255,7 +257,7 @@ function parseDbsCard(pages, text) {
       if (!continuation(state, line, descX)) state.cur = null;
     });
   });
-  return { bank: "DBS", stmtType: "DBS CC", label: "DBS cards", statementDate: ctx.label, rows, checks: cardChecks(cards, grand, "Grand total for all cards") };
+  return { bank: "DBS", kind: "card", label: "DBS cards", statementDate: ctx.label, rows, numbers: cards.map(c => c.number), checks: cardChecks(cards, grand, "Grand total for all cards") };
 }
 
 function parseUobCard(pages, text) {
@@ -272,7 +274,7 @@ function parseUobCard(pages, text) {
       if (/End of Transaction Details/.test(t)) { done = true; return; }
       const cm = line.items[0].str.match(/^(\d{4}-\d{4}-\d{4}-\d{4})/);
       if (cm) {
-        if (!cards[cm[1]]) { cards[cm[1]] = { name: cm[1], prev: 0, cr: 0, dr: 0, total: null }; order.push(cm[1]); }
+        if (!cards[cm[1]]) { cards[cm[1]] = { name: cm[1], number: Acc.last4(cm[1]), prev: 0, cr: 0, dr: 0, total: null }; order.push(cm[1]); }
         card = cards[cm[1]]; inTable = false; state.cur = null;
         return;
       }
@@ -304,7 +306,7 @@ function parseUobCard(pages, text) {
     });
   });
   const list = order.map(k => ({ ...cards[k], name: cards[k].label || cards[k].name }));
-  return { bank: "UOB", stmtType: "UOB Card", label: "UOB cards", statementDate: ctx.label, rows, checks: cardChecks(list, amountToPay ? cents(amountToPay[1]) : null, "Amount to pay") };
+  return { bank: "UOB", kind: "card", label: "UOB cards", statementDate: ctx.label, rows, numbers: order.map(k => cards[k].number), checks: cardChecks(list, amountToPay ? cents(amountToPay[1]) : null, "Amount to pay") };
 }
 
 /* ---------------------------- entry points ---------------------------- */
@@ -317,7 +319,9 @@ const PARSERS = [
 ];
 
 // pages: arrays of lines from extractPages (or a test fixture). Returns
-// { file, bank, stmtType, label, statementDate, rows, checks } or { file, error }.
+// { file, bank, kind, source, accounts, label, statementDate, rows, checks }
+// or { file, error }. Each row carries its account id; accounts lists the
+// accounts on the statement, in the order printed.
 function parseStatement(pages, fileName) {
   const text = pages.map(lines => lines.map(l => l.text).join("\n")).join("\n");
   const parser = PARSERS.find(p => p.test(text));
@@ -325,11 +329,22 @@ function parseStatement(pages, fileName) {
   try {
     const res = parser.parse(pages, text);
     if (!res.rows.length) return { file: fileName, error: `Read this as a ${res.label} statement, but found no transactions.` };
-    res.rows = res.rows.map(r => ({ file: fileName, bank: res.bank, date: r.date, description: r.description, amount: r.amount, type: r.type, category: "", stmtType: res.stmtType }));
-    return { file: fileName, ...res };
+    return finishStatement(fileName, res);
   } catch (err) {
     return { file: fileName, error: err.message };
   }
+}
+
+// Shared with gemini-parse.js: rows get their account ids, the statement its
+// source and account list. A row with no number belongs to the account with
+// none (card-dbs), so nothing is guessed.
+function finishStatement(fileName, res) {
+  const { numbers, ...rest } = res;
+  const list = [], seen = new Set();
+  const addAccount = n => { const a = Acc.makeAccount(res.bank, res.kind, n || null); if (!seen.has(a.id)) { seen.add(a.id); list.push(a); } return a.id; };
+  (numbers || []).forEach(addAccount);
+  const rows = res.rows.map(r => ({ file: fileName, bank: res.bank, date: r.date, description: r.description, amount: r.amount, type: r.type, category: "", account: addAccount(r.number) }));
+  return { file: fileName, ...rest, source: Acc.sourceId(res.bank, res.kind), accounts: list, rows };
 }
 
 async function parsePdf(pdfjs, data, fileName, onPassword) {
@@ -343,7 +358,7 @@ async function parsePdf(pdfjs, data, fileName, onPassword) {
   return res;
 }
 
-const api = { loadPdfjs, extractPages, toLines, parseStatement, parsePdf, check, MONTHS, UNKNOWN_LAYOUT };
+const api = { loadPdfjs, extractPages, toLines, parseStatement, finishStatement, parsePdf, check, MONTHS, UNKNOWN_LAYOUT };
 if (typeof module === "object" && module.exports) module.exports = api;
 else root.DuitPdfImport = api;
 })(typeof self !== "undefined" ? self : this);

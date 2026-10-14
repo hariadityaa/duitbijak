@@ -42,7 +42,10 @@ test("POSB: columns, wrapped descriptions, page breaks, totals", () => {
   ]);
   const res = parseStatement([p1, p2], "posb.pdf");
   assert.ifError(res.error);
-  assert.strictEqual(res.stmtType, "POSB");
+  assert.strictEqual(res.kind, "bank");
+  assert.strictEqual(res.source, "bank-posb");
+  assert.deepStrictEqual(res.accounts.map(a => [a.id, a.number, a.name]), [["bank-posb-2223", "2223", "POSB account ·2223"]]);
+  assert(res.rows.every(r => r.account === "bank-posb-2223"));
   assert.deepStrictEqual(res.rows.map(keyOf), [
     "03 Jan 2027|CR|50.00|FAST Payment / Receipt From: SOMEONE Other",
     "05 Jan 2027|DR|20.00|Funds Transfer TOP-UP TO PAYLAH! :",
@@ -72,7 +75,9 @@ test("UOB account: Total row carries the closing balance; a wrong total is flagg
   ])];
   const ok = parseStatement(build("6,990.80"), "uob.pdf");
   assert.ifError(ok.error);
-  assert.strictEqual(ok.stmtType, "UOB One");
+  assert.strictEqual(ok.source, "bank-uob");
+  assert.deepStrictEqual(ok.accounts.map(a => a.id), ["bank-uob-7776"]);
+  assert(ok.rows.every(r => r.account === "bank-uob-7776"));
   assert.deepStrictEqual(ok.rows.map(keyOf), [
     "02 Mar 2027|DR|9.20|PAYNOW-FAST SOME HAWKER MBK0000000000",
     "24 Mar 2027|CR|5000.00|Inward CR - GIRO SALA Salary Payment",
@@ -102,7 +107,9 @@ test("DBS cards: CR payments, REF NO dropped, December rows on a January stateme
     [420, [[200, "GRAND TOTAL FOR ALL CARD ACCOUNTS:"], [521, "1,100.00", 551]]],
   ])], "dbs.pdf");
   assert.ifError(res.error);
-  assert.strictEqual(res.stmtType, "DBS CC");
+  assert.strictEqual(res.source, "card-dbs");
+  assert.deepStrictEqual(res.accounts.map(a => [a.id, a.name]), [["card-dbs-0001", "DBS card ·0001"]]);
+  assert(res.rows.every(r => r.account === "card-dbs-0001"));
   assert.deepStrictEqual(res.rows.map(keyOf), [
     "26 Dec 2026|CR|100.00|BILL PAYMENT - DBS INTERNET/WIRELESS",
     "20 Dec 2026|DR|40.00|SOME SHOP",
@@ -142,13 +149,60 @@ test("UOB cards: transaction date, Ref No dropped, total on the next line, payme
   ]);
   const res = parseStatement([p1, p2], "uobcc.pdf");
   assert.ifError(res.error);
-  assert.strictEqual(res.stmtType, "UOB Card");
+  assert.strictEqual(res.source, "card-uob");
+  assert.deepStrictEqual(res.accounts.map(a => a.id), ["card-uob-0002"]);
+  assert(res.rows.every(r => r.account === "card-uob-0002"));
   assert.deepStrictEqual(res.rows.map(keyOf), [
     "26 Jan 2027|CR|30.00|PAYMT THRU E-BANK/HOMEB/CYBERB (EP00)",
     "31 Jan 2027|DR|10.50|SOME CAFE SINGAPORE",
     "09 Feb 2027|DR|50.00|TOWN USD 37.00",
   ]);
   assert.deepStrictEqual(res.checks.map(c => [c.label, c.ok]), [["TEST CARD balance", true], ["Amount to pay", true]]);
+});
+
+test("POSB: two accounts on one statement become two accounts", () => {
+  const header = [[37, "DATE"], [97, "DETAILS OF TRANSACTIONS"], [313, "WITHDRAWAL($)", 362], [408, "DEPOSIT($)", 442], [485, "BALANCE($)", 521]];
+  const res = parseStatement([page([
+    [566, [[443, "As at 31 Jan 2027"]]],
+    [543, [[37, "Details of Your POSB Everyday Savings Account"], [409, "Account No.: 111-22222-3"]]],
+    [523, header],
+    [493, [[97, "Balance Brought Forward"], [486, "100.00", 521]]],
+    [477, [[37, "03 Jan"], [97, "Coffee"], [340, "5.00", 362], [486, "95.00", 521]]],
+    [461, [[97, "Total"], [340, "5.00", 362]]],
+    [445, [[97, "Balance Carried Forward"], [486, "95.00", 521]]],
+    [400, [[37, "Details of Your POSB Savings Account"], [409, "Account No.: 444-55555-6"]]],
+    [380, header],
+    [360, [[97, "Balance Brought Forward"], [486, "200.00", 521]]],
+    [344, [[37, "04 Jan"], [97, "Coffee"], [340, "5.00", 362], [486, "195.00", 521]]],
+    [328, [[97, "Total"], [340, "5.00", 362]]],
+    [312, [[97, "Balance Carried Forward"], [486, "195.00", 521]]],
+  ])], "posb2.pdf");
+  assert.ifError(res.error);
+  assert.deepStrictEqual(res.accounts.map(a => a.id), ["bank-posb-2223", "bank-posb-5556"]);
+  assert.deepStrictEqual(res.rows.map(r => [r.date, r.account]), [["03 Jan 2027", "bank-posb-2223"], ["04 Jan 2027", "bank-posb-5556"]]);
+  assert.strictEqual(res.source, "bank-posb");
+  assert(res.checks.every(c => c.ok), JSON.stringify(res.checks));
+});
+
+test("DBS cards: two cards on one statement, one source, rows on each card", () => {
+  const res = parseStatement([page([
+    [760, [[95, "STATEMENT DATE"]]],
+    [748, [[95, "12 Jan 2027"]]],
+    [700, [[400, "DBS Cards P.O. Box 000"]]],
+    [600, [[54, "DATE"], [95, "DESCRIPTION"], [480, "AMOUNT (S$)"]]],
+    [580, [[54, "DBS TEST VISA CARD NO.: 4000 0000 0000 0001"]]],
+    [505, [[54, "05 JAN"], [95, "SHOP A"], [525, "40.00", 551]]],
+    [460, [[429, "TOTAL:"], [525, "40.00", 551]]],
+    [440, [[54, "DBS TEST MASTERCARD CARD NO.: 5000 0000 0000 0009"]]],
+    [420, [[54, "06 JAN"], [95, "SHOP B"], [525, "10.00", 551]]],
+    [400, [[429, "TOTAL:"], [525, "10.00", 551]]],
+    [380, [[200, "GRAND TOTAL FOR ALL CARD ACCOUNTS:"], [525, "50.00", 551]]],
+  ])], "dbs2.pdf");
+  assert.ifError(res.error);
+  assert.strictEqual(res.source, "card-dbs");
+  assert.deepStrictEqual(res.accounts.map(a => a.name), ["DBS card ·0001", "DBS card ·0009"]);
+  assert.deepStrictEqual(res.rows.map(r => r.account), ["card-dbs-0001", "card-dbs-0009"]);
+  assert(res.checks.every(c => c.ok), JSON.stringify(res.checks));
 });
 
 test("unknown layouts are rejected, not guessed", () => {
