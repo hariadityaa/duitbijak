@@ -207,6 +207,12 @@
   .month-toggle:hover{ background:var(--border); }
   .month-toggle .r{ color:var(--text-2); }
 
+  /* One-off prompts (install, update) stand apart from the dashboard cards */
+  .card.promo{ border-color:var(--border-strong); background:var(--surface-2); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .card.promo p{ margin:0; font-size:14px; color:var(--text-2); line-height:1.5; }
+  .card.promo strong{ color:var(--text); }
+  .card.promo .btn-row{ margin-top:0; }
+
   .toast{ position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--accent); color:var(--on-accent); padding:12px 16px; border-radius:var(--radius); font-size:14px; font-weight:500; z-index:50; }
 
   footer.site-footer{ margin-top:48px; padding-top:24px; border-top:1px solid var(--border); font-size:12px; color:var(--text-2); text-align:center; }
@@ -624,8 +630,28 @@ function renderHeader() {
   </div>
   ${ui.storage === "local" && !months.length ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>This data lives only in this browser's local storage — nothing is uploaded anywhere. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
   ${ui.syncError ? `<div class="banner error"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>${esc(ui.syncError)}</span></div>` : ""}
+  ${renderAppPrompts()}
   ${ui.showPaste ? renderPastePanel() : ""}
   `;
+}
+
+// Lives outside `ui` because clearing data resets `ui`, and these are about the app, not the data.
+function renderAppPrompts() {
+  let out = "";
+  if (pwa.updateReady) out += `
+  <div class="card promo" role="status">
+    <p><strong>A new version of Duit Bijak is ready.</strong></p>
+    <div class="btn-row"><button class="btn primary" data-action="apply-update">Update now</button></div>
+  </div>`;
+  if (pwa.installEvent && !pwa.installDeclined && !isStandalone()) out += `
+  <div class="card promo">
+    <p><strong>Put Duit Bijak on your home screen.</strong> Open it like any other app. It works offline too.</p>
+    <div class="btn-row">
+      <button class="btn primary" data-action="install-app">Install app</button>
+      <button class="btn ghost" data-action="decline-install">Not now</button>
+    </div>
+  </div>`;
+  return out;
 }
 
 function renderPastePanel() {
@@ -963,6 +989,37 @@ function renderLedger(months) {
   return `<div class="section-label">Transaction ledger — all months</div>${blocks}`;
 }
 
+/* ============================== install & updates ============================== */
+// Chrome's menu install can say "already installed" when another app on hariadityaa.github.io
+// is installed. The page prompt checks this app's scope correctly, so offer it in the page.
+const INSTALL_DECLINED = "duitbijak.installDeclined";
+const pwa = { installEvent: null, installDeclined: false, updateReady: false };
+try { pwa.installDeclined = localStorage.getItem(INSTALL_DECLINED) === "1"; } catch (e) {}
+function isStandalone() { return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; }
+
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); pwa.installEvent = e; render(); });
+window.addEventListener("appinstalled", () => { pwa.installEvent = null; render(); });
+
+// A new deploy ships a new sw.js. It installs, takes over at once and fires
+// controllerchange. The open page still runs the old code, so offer a reload.
+// The installed app can sit in the background for days, so check on return.
+const UPDATE_CHECK_MS = 30 * 60 * 1000;
+function watchForUpdates() {
+  if (!("serviceWorker" in navigator)) return;
+  const sw = navigator.serviceWorker;
+  // The first install also fires controllerchange. That is not an update.
+  let hadController = !!sw.controller;
+  sw.addEventListener("controllerchange", () => {
+    if (hadController) { pwa.updateReady = true; render(); }
+    hadController = true;
+  });
+  sw.register("sw.js").then(reg => {
+    const check = () => reg.update().catch(() => {});
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+    setInterval(check, UPDATE_CHECK_MS);
+  }).catch(() => {});
+}
+
 /* ============================== events ============================== */
 let wired = false;
 function wireOnce() {
@@ -1008,6 +1065,17 @@ function onClick(e) {
   if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; render(); }
   else if (action === "toggle-paste") { ui.showPaste = !ui.showPaste; render(); const ta = document.getElementById("paste-input"); if (ta) ta.focus(); }
   else if (action === "cancel-paste") { ui.showPaste = false; ui.pasteDraft = ""; ui.syncError = null; render(); }
+  else if (action === "apply-update") { location.reload(); }
+  else if (action === "install-app") {
+    const ev = pwa.installEvent;
+    pwa.installEvent = null; render();
+    if (ev) ev.prompt().catch(() => {});
+  }
+  else if (action === "decline-install") {
+    pwa.installDeclined = true;
+    try { localStorage.setItem(INSTALL_DECLINED, "1"); } catch (e) {}
+    render();
+  }
   else if (action === "toggle-income") { ui.hideIncome = !ui.hideIncome; render(); }
   else if (action === "set-bucket") { ui[btn.getAttribute("data-key")] = btn.getAttribute("data-value"); ui.selectedCat = null; render(); }
   else if (action === "select-cat") { const c = btn.getAttribute("data-cat"); ui.selectedCat = ui.selectedCat === c ? null : c; render(); }
@@ -1079,9 +1147,7 @@ function onClick(e) {
 /* ============================== init ============================== */
 render();
 initPersistence();
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
-}
+watchForUpdates();
 })();
 </script>
 
