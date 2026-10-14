@@ -1,6 +1,8 @@
 /* Duit Bijak: bank statement PDF import.
-   Everything here runs in this browser. The PDF is read with a copy of pdf.js
-   served from this site (vendor/), and nothing is sent anywhere.
+   The built-in parsers run in this browser. The PDF is read with a copy of
+   pdf.js served from this site (vendor/), and they send nothing anywhere.
+   A layout none of them knows can be read by Gemini instead (gemini-parse.js),
+   but only after a tap, and that sends the statement's text to Google.
 
    One parser per statement layout (POSB/DBS deposit, UOB account, DBS cards,
    UOB cards). Each works on text lines rebuilt from pdf.js text positions and
@@ -306,6 +308,7 @@ function parseUobCard(pages, text) {
 }
 
 /* ---------------------------- entry points ---------------------------- */
+const UNKNOWN_LAYOUT = "Not a statement layout this app knows (UOB account, UOB cards, POSB, DBS cards).";
 const PARSERS = [
   { test: t => /Details of Your (POSB|DBS)/.test(t), parse: parseDbsDeposit },
   { test: t => /CARD NO\.:/.test(t) && /DBS Cards/.test(t), parse: parseDbsCard },
@@ -318,7 +321,7 @@ const PARSERS = [
 function parseStatement(pages, fileName) {
   const text = pages.map(lines => lines.map(l => l.text).join("\n")).join("\n");
   const parser = PARSERS.find(p => p.test(text));
-  if (!parser) return { file: fileName, error: "Not a statement layout this app knows (UOB account, UOB cards, POSB, DBS cards)." };
+  if (!parser) return { file: fileName, error: UNKNOWN_LAYOUT, unknownLayout: true };
   try {
     const res = parser.parse(pages, text);
     if (!res.rows.length) return { file: fileName, error: `Read this as a ${res.label} statement, but found no transactions.` };
@@ -333,10 +336,14 @@ async function parsePdf(pdfjs, data, fileName, onPassword) {
   let pages;
   try { pages = await extractPages(pdfjs, data, onPassword); }
   catch (err) { return { file: fileName, error: /Skipped/.test(err.message) ? err.message : `Couldn't open this PDF (${err.message}).` }; }
-  return parseStatement(pages, fileName);
+  const res = parseStatement(pages, fileName);
+  // Kept in memory only, so "Read with Gemini" can send the text without
+  // reopening the PDF (and asking for its password again).
+  if (res.unknownLayout) res.pages = pages;
+  return res;
 }
 
-const api = { loadPdfjs, extractPages, toLines, parseStatement, parsePdf };
+const api = { loadPdfjs, extractPages, toLines, parseStatement, parsePdf, check, MONTHS, UNKNOWN_LAYOUT };
 if (typeof module === "object" && module.exports) module.exports = api;
 else root.DuitPdfImport = api;
 })(typeof self !== "undefined" ? self : this);

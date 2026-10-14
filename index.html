@@ -164,7 +164,7 @@
 
   .period-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
   .period-bar label{ font-size:12px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
-  select, input[type=text], input[type=number], textarea{
+  select, input[type=text], input[type=number], input[type=password], textarea{
     font-family:inherit; font-size:14px; color:var(--text); background:var(--surface-2);
     border:1px solid var(--border); border-radius:var(--radius); padding:0 12px; height:40px;
     transition:border-color var(--ease);
@@ -202,6 +202,10 @@
   .pdf-check.ok svg{ color:var(--success); }
   .pdf-check.bad svg, .pdf-check.bad{ color:var(--danger); }
   .pdf-file .btn.small{ margin-left:16px; }
+  .pdf-tag{ display:inline-block; font-size:11px; padding:1px 6px; border:1px solid var(--border); border-radius:4px; color:var(--text-2); margin-left:4px; }
+  .pdf-consent{ font-size:12px; color:var(--text-2); margin:8px 0 0 24px; max-width:60ch; }
+  .key-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .key-row input{ flex:1 1 220px; min-width:0; }
   table.ledger td.pdf-desc{ max-width:200px; overflow:hidden; text-overflow:ellipsis; }
 
   .form-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
@@ -245,6 +249,7 @@
 <div id="toast-holder"></div>
 
 <script src="pdf-import.js"></script>
+<script src="gemini-parse.js"></script>
 <script src="categorise.js"></script>
 <script>
 (function(){
@@ -273,6 +278,9 @@ const GIRO_KEYWORDS = [
   { key: "iFAST Investment", match: /iFAST FINANCIAL/i },
   { key: "IRAS Income Tax", match: /IRAS Income Tax/i },
 ];
+// Statement types. "Other …" are statements read by Gemini (gemini-parse.js).
+const BANK_TYPES = new Set(["UOB One", "POSB", "Other account"]);
+const CARD_TYPES = new Set(["DBS CC", "UOB Card", "Other card"]);
 const SALARY_MATCH = /Salary Payment/i;
 const INTERBANK_TRANSFER_MATCH = /Funds Tr(a|f)nsfer|Funds Trf/i;
 const CARD_BILL_PAYMENT_MATCH = /Bill Payment.*(Cards?|DBSC)|mBK-UOB Cards|BILL PAYMENT - DBS INTERNET/i;
@@ -388,8 +396,8 @@ function buildMonths(cleanRows) {
   });
   const months = {};
   Object.entries(byMonth).forEach(([month, txs]) => {
-    const bankTxs = txs.filter(t => t.stmtType === "UOB One" || t.stmtType === "POSB");
-    const cardTxs = txs.filter(t => t.stmtType === "DBS CC" || t.stmtType === "UOB Card");
+    const bankTxs = txs.filter(t => BANK_TYPES.has(t.stmtType));
+    const cardTxs = txs.filter(t => CARD_TYPES.has(t.stmtType));
     let salaryIn = 0, otherIn = 0, giroOut = 0, otherOut = 0, cardSpend = 0;
     const giroCategories = { "HDB Loan": 0, "TMLS (Insurance/Tax)": 0, "iFAST Investment": 0, "IRAS Income Tax": 0 };
     const otherCategories = {};
@@ -510,7 +518,7 @@ function opexLineItems(months, category) {
       if (INTERBANK_TRANSFER_MATCH.test(tx.description)) return;
       if (CARD_BILL_PAYMENT_MATCH.test(tx.description)) return;
       if (GIRO_KEYWORDS.some(g => g.match.test(tx.description))) return;
-      const isBank = tx.account === "UOB One" || tx.account === "POSB";
+      const isBank = BANK_TYPES.has(tx.account);
       if (isBank && tx.withdrawal == null) return;
       const amount = tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0);
       if (!amount) return;
@@ -688,13 +696,15 @@ function renderHeader() {
       <div class="header-btns">
         <button class="btn ${ui.showPaste ? "on" : ""}" data-action="toggle-paste">Add data</button>
         <button class="btn ${ui.hideIncome ? "" : "on"}" data-action="toggle-income" aria-pressed="${!ui.hideIncome}">${ui.hideIncome ? "Show income" : "Hide income"}</button>
+        <button class="btn ${ui.showSettings ? "on" : ""}" data-action="toggle-settings" aria-expanded="${!!ui.showSettings}">Settings</button>
       </div>
       ${ui.lastSynced ? `<span class="note">Updated ${esc(ui.lastSynced)}</span>` : ""}
     </div>
   </div>
-  ${ui.storage === "local" && !months.length ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>This data lives only in this browser's local storage — nothing is uploaded anywhere. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
+  ${ui.storage === "local" && !months.length ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>This data lives only in this browser's local storage — nothing is uploaded anywhere unless you choose to read a statement with Gemini. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
   ${ui.syncError ? `<div class="banner error"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>${esc(ui.syncError)}</span></div>` : ""}
   ${renderAppPrompts()}
+  ${ui.showSettings ? renderSettings() : ""}
   ${ui.pdfImport ? renderPdfReview() : ui.showPaste ? renderPastePanel() : ""}
   `;
 }
@@ -715,7 +725,8 @@ function renderPdfReview() {
     if (f.error) return `
     <div class="pdf-file">
       <div class="pdf-head"><input type="checkbox" disabled aria-label="Not importable"><strong>${esc(f.file)}</strong></div>
-      <div class="pdf-checks"><div class="pdf-check bad">${CROSS_ICON}<span>${esc(f.error)}</span></div></div>
+      <div class="pdf-checks"><div class="pdf-check bad">${CROSS_ICON}<span>${esc(f.error)}</span></div>${f.geminiError ? `<div class="pdf-check bad">${CROSS_ICON}<span>${esc(f.geminiError)}</span></div>` : ""}</div>
+      ${f.pages ? renderGeminiOffer(f, i) : ""}
     </div>`;
     const allOk = f.checks.every(c => c.ok);
     const checks = f.checks.map(c => `<div class="pdf-check ${c.ok ? "ok" : "bad"}">${c.ok ? CHECK_ICON : CROSS_ICON}<span>${esc(c.label)}: statement <span class="num">${esc(c.expected)}</span>${c.ok ? "" : `, parsed <span class="num">${esc(c.actual)}</span>`}</span></div>`).join("");
@@ -727,7 +738,7 @@ function renderPdfReview() {
     return `
     <div class="pdf-file">
       <label class="pdf-head"><input type="checkbox" data-action="pdf-toggle-file" data-idx="${i}" ${f.include ? "checked" : ""}><strong>${esc(f.file)}</strong></label>
-      <div class="pdf-meta">${esc(f.label)} &middot; statement ${esc(f.statementDate)} &middot; ${f.rows.length} row${f.rows.length !== 1 ? "s" : ""}${allOk ? "" : " &middot; <strong>totals don't match, so it's unticked</strong>"}</div>
+      <div class="pdf-meta">${esc(f.label)}${f.readBy === "gemini" ? ` <span class="pdf-tag" title="${esc(f.model)}">Read by Gemini</span>` : ""} &middot; statement ${esc(f.statementDate)} &middot; ${f.rows.length} row${f.rows.length !== 1 ? "s" : ""}${allOk ? "" : " &middot; <strong>totals don't match, so it's unticked</strong>"}</div>
       <div class="pdf-checks">${checks}</div>
       <button class="btn small ghost" data-action="pdf-toggle-rows" data-idx="${i}" style="margin-top:8px;">${f.open ? "Hide rows" : "Show rows"}</button>
       ${table}
@@ -740,7 +751,7 @@ function renderPdfReview() {
   return `
   <div class="card">
     <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Review PDF import</p>
-    <p class="paste-help">Each file's rows are checked against the statement's own totals. Categories are guessed at import, as with CSV.</p>
+    <p class="paste-help">Each file's rows are checked against the statement's own totals. Categories are guessed at import, as with CSV.${st.files.some(f => f.readBy === "gemini") ? " Check rows read by Gemini closely: a model can misread a statement." : ""}</p>
     ${files}
     ${summary}
     <div class="btn-row">
@@ -748,6 +759,68 @@ function renderPdfReview() {
       <button class="btn ghost" data-action="pdf-cancel">Cancel</button>
     </div>
   </div>`;
+}
+
+// Shown on a file no built-in parser knows. Nothing is sent without a tap,
+// and the first tap only shows the consent note.
+function renderGeminiOffer(f, i) {
+  if (f.geminiBusy) return `<p class="pdf-consent" role="status">Reading with Gemini… this can take up to a minute.</p>`;
+  if (!DuitGemini.loadKeys().gemini) return `
+      <button class="btn small" data-action="open-settings" style="margin-top:8px;">Add a Gemini key in Settings to read it</button>`;
+  if (f.askConsent) return `
+      <p class="pdf-consent">${GEMINI_CONSENT_TEXT}</p>
+      <div class="btn-row" style="margin:8px 0 0 24px;">
+        <button class="btn small primary" data-action="pdf-gemini-consent" data-idx="${i}">I agree, send it</button>
+        <button class="btn small ghost" data-action="pdf-gemini-cancel" data-idx="${i}">Cancel</button>
+      </div>`;
+  return `
+      <button class="btn small" data-action="pdf-gemini" data-idx="${i}" style="margin-top:8px;">Read with Gemini</button>`;
+}
+const GEMINI_CONSENT_TEXT = `<strong>This sends the statement's text to Google.</strong> On Gemini's free tier, Google may use it to improve its products (<a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">terms</a>). Turning on billing for your key stops that. You'll only be asked once on this device.`;
+
+function renderSettings() {
+  const key = DuitGemini.loadKeys().gemini;
+  const test = ui.keyTest;
+  return `
+  <div class="card" id="settings-card">
+    <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Settings</p>
+    <p class="paste-help"><strong>Gemini API key</strong>: reads statement PDFs the built-in parsers don't know, only when you tap "Read with Gemini". The key is kept in this browser only, never in your ledger data or sync. Get one free from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.</p>
+    <p class="paste-help" style="margin-top:0;">Saved key: <span class="num">${esc(DuitGemini.maskKey(key))}</span></p>
+    <div class="key-row">
+      <input type="password" id="gemini-key-input" aria-label="Gemini API key" placeholder="${key ? "Paste a new key to replace it" : "Paste your Gemini API key"}" autocomplete="off" spellcheck="false">
+      <button class="btn primary" data-action="save-key">Save key</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn" data-action="test-key" ${key ? "" : "disabled"}>Test key</button>
+      <button class="btn ghost" data-action="clear-key" ${key ? "" : "disabled"}>Clear key</button>
+      <button class="btn ghost" data-action="copy-setup-link" ${key ? "" : "disabled"}>Copy setup link (secret)</button>
+    </div>
+    ${test ? `<p class="paste-help" role="status" style="margin:8px 0 0;">${test.busy ? "Testing…" : `${test.ok ? "Works" : "Failed"}: ${esc(test.message)}`}</p>` : ""}
+    <p class="paste-help" style="margin:12px 0 0;">The setup link carries your key, so treat it like a password. Opening it on another device saves the key there and removes it from the address bar. Anyone holding it can spend your key.</p>
+    <p class="paste-help" style="margin:8px 0 0;">${DuitGemini.hasConsent() ? "You've agreed to send statement text to Google on this device." : "You'll be asked before any statement text is first sent to Google."}</p>
+    <div class="btn-row"><button class="btn ghost" data-action="toggle-settings">Close</button></div>
+  </div>`;
+}
+
+// Opening "#setup?gemini=…" saves the key, then strips it from the address bar.
+function consumeSetupLink() {
+  const keys = DuitGemini.parseSetupFragment(location.hash);
+  if (!keys) return false;
+  try { DuitGemini.saveKeys({ ...DuitGemini.loadKeys(), ...keys }); } catch (e) { return false; }
+  history.replaceState(null, "", location.pathname + location.search);
+  return true;
+}
+
+async function readWithGemini(f) {
+  f.geminiBusy = true; f.askConsent = false; f.geminiError = null;
+  render();
+  const res = await DuitGemini.parseWithGemini(f.pages, f.file, DuitGemini.loadKeys().gemini);
+  const st = ui.pdfImport;
+  const idx = st ? st.files.indexOf(f) : -1;
+  if (idx === -1) return; // Import was cancelled meanwhile.
+  if (res.error) { f.geminiBusy = false; f.geminiError = res.error; }
+  else st.files[idx] = { ...res, include: res.checks.every(c => c.ok), open: false };
+  render();
 }
 
 // Reads each picked PDF in turn (password prompts need to happen one at a
@@ -805,7 +878,7 @@ function renderPastePanel() {
   return `
   <div class="card">
     <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Import data</p>
-    <p class="paste-help"><strong>Statement PDFs</strong> (UOB account, UOB cards, POSB, DBS cards): pick one or more. They're read in this browser, and you review the rows before anything is saved.</p>
+    <p class="paste-help"><strong>Statement PDFs</strong> (UOB account, UOB cards, POSB, DBS cards): pick one or more. They're read in this browser, and you review the rows before anything is saved. Other SGD statements can be read by Gemini with your own key, but only if you tap to send them.</p>
     <div class="btn-row" style="margin-top:0;margin-bottom:16px;">
       <button class="btn primary" data-action="trigger-pdf-import">Import statement PDFs</button>
       <input type="file" accept="application/pdf,.pdf" multiple id="pdf-file-input" style="display:none">
@@ -1269,6 +1342,46 @@ function onClick(e) {
     render();
   }
   else if (action === "pdf-cancel") { ui.pdfImport = null; render(); }
+  else if (action === "pdf-gemini" || action === "pdf-gemini-consent" || action === "pdf-gemini-cancel") {
+    const f = ui.pdfImport && ui.pdfImport.files[Number(btn.getAttribute("data-idx"))];
+    if (!f || !f.pages || f.geminiBusy) return;
+    if (action === "pdf-gemini-cancel") { f.askConsent = false; render(); return; }
+    if (action === "pdf-gemini-consent") { try { DuitGemini.giveConsent(); } catch (e) {} }
+    else if (!DuitGemini.hasConsent()) { f.askConsent = true; render(); return; }
+    readWithGemini(f).catch(err => { f.geminiBusy = false; f.geminiError = "Gemini read failed: " + err.message; render(); });
+  }
+  else if (action === "toggle-settings") { ui.showSettings = !ui.showSettings; ui.keyTest = null; render(); }
+  else if (action === "open-settings") {
+    ui.showSettings = true; render();
+    const card = document.getElementById("settings-card");
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  else if (action === "save-key") {
+    const input = document.getElementById("gemini-key-input");
+    const key = input ? input.value.trim() : "";
+    if (!key) { showToast("Paste a key first."); return; }
+    try { DuitGemini.saveKeys({ ...DuitGemini.loadKeys(), gemini: key }); }
+    catch (e) { showToast("Couldn't save the key in this browser."); return; }
+    ui.keyTest = null; showToast("Gemini key saved."); render();
+  }
+  else if (action === "test-key") {
+    const key = DuitGemini.loadKeys().gemini;
+    if (!key) return;
+    ui.keyTest = { busy: true }; render();
+    DuitGemini.testKey(key).then(r => { ui.keyTest = r; render(); });
+  }
+  else if (action === "clear-key") {
+    try { DuitGemini.clearKeys(); } catch (e) {}
+    ui.keyTest = null; showToast("Gemini key cleared."); render();
+  }
+  else if (action === "copy-setup-link") {
+    const key = DuitGemini.loadKeys().gemini;
+    if (!key) return;
+    const link = DuitGemini.buildSetupLink(location.href, { gemini: key });
+    const fallback = () => window.prompt("Copy this setup link. It contains your key, so send it privately:", link);
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => showToast("Setup link copied. Send it privately."), fallback);
+    else fallback();
+  }
   else if (action === "pdf-commit") {
     const st = ui.pdfImport;
     if (!st || st.busy) return;
@@ -1326,6 +1439,7 @@ function onClick(e) {
 }
 
 /* ============================== init ============================== */
+if (consumeSetupLink()) { ui.showSettings = true; showToast("Gemini key saved from setup link."); }
 render();
 initPersistence();
 watchForUpdates();
@@ -1333,7 +1447,7 @@ watchForUpdates();
 </script>
 
 <footer class="site-footer">
-  <a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> — a local-only finance ledger. Nothing you enter here leaves your browser.
+  <a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> — a local-only finance ledger. Nothing you enter here leaves your browser, unless you choose to read a statement with Gemini.
 </footer>
 
 </body>

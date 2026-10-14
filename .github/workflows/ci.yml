@@ -17,6 +17,7 @@ jobs:
         run: |
           node --check sw.js
           node --check pdf-import.js
+          node --check gemini-parse.js
           node --check categorise.js
           node -e '
             const html = require("fs").readFileSync("index.html", "utf8");
@@ -27,6 +28,8 @@ jobs:
           node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
       - name: PDF parser tests
         run: node tests/pdf-import.test.js
+      - name: Gemini fallback tests
+        run: node tests/gemini-parse.test.js
       - name: Categoriser tests
         run: node tests/categorise.test.js
       # Pages serves this branch as-is, so nothing stamps a version at deploy.
@@ -35,7 +38,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           base=${{ github.event.pull_request.base.sha }}
-          changed=$(git diff --name-only "$base" HEAD -- index.html manifest.json icons sw.js pdf-import.js categorise.js vendor)
+          changed=$(git diff --name-only "$base" HEAD -- index.html manifest.json icons sw.js pdf-import.js gemini-parse.js categorise.js vendor)
           [ -z "$changed" ] && { echo "App files unchanged."; exit 0; }
           old=$(git show "$base:sw.js" | grep -o 'duit-bijak-v[0-9]*')
           new=$(grep -o 'duit-bijak-v[0-9]*' sw.js)
