@@ -27,7 +27,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           base=${{ github.event.pull_request.base.sha }}
-          changed=$(git diff --name-only "$base" HEAD | grep -E '^(index\.html|manifest\.json|icons/|vendor/|[a-z-]+\.js$)' || true)
+          changed=$(git diff --name-only "$base" HEAD | grep -E '^(index\.html|styles\.css|manifest\.json|icons/|vendor/|app/|[a-z-]+\.js$)' || true)
           [ -z "$changed" ] && { echo "App files unchanged."; exit 0; }
           old=$(git show "$base:sw.js" | grep -o 'duit-bijak-v[0-9]*')
           new=$(grep -o 'duit-bijak-v[0-9]*' sw.js)
