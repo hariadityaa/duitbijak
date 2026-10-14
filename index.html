@@ -325,6 +325,12 @@
   .rule-chip.bad, .rule-row.bad .rule-match{ border-color:var(--danger); color:var(--danger); }
   .rule-chip .icon-btn, .rule-row .icon-btn{ width:32px; height:32px; }
   .rule-add{ display:flex; gap:8px; flex-wrap:wrap; }
+  /* Accounts sheet */
+  .acct-row{ display:flex; align-items:center; gap:12px; margin-top:8px; }
+  .acct-row .acct-name{ flex:1 1 0; min-width:0; }
+  .acct-row.hidden-acct .acct-name{ color:var(--text-2); }
+  .acct-hide{ display:flex; align-items:center; gap:6px; min-height:44px; font-size:14px; color:var(--text-2); white-space:nowrap; }
+  .acct-meta{ margin:4px 0 0; font-size:13px; color:var(--text-2); }
   .rule-add input{ flex:1 1 140px; min-width:0; }
   /* Sticks over the sheet's bottom padding, so rows don't show below it */
   .sheet-foot{
@@ -343,6 +349,7 @@
 <div class="wrap" id="app"></div>
 <div id="toast-holder"></div>
 
+<script src="accounts.js"></script>
 <script src="pdf-import.js"></script>
 <script src="gemini-parse.js"></script>
 <script src="categorise.js"></script>
@@ -365,8 +372,11 @@ const CATEGORY_FIELDS = [
 ];
 
 // Statement types. "Other …" are statements read by Gemini (gemini-parse.js).
-const BANK_TYPES = new Set(["UOB One", "POSB", "Other account"]);
-const CARD_TYPES = new Set(["DBS CC", "UOB Card", "Other card"]);
+// Bank vs card comes from the account id (accounts.js), e.g. card-dbs-5678.
+const isBankAccount = id => DuitAccounts.kindOf(id) === "bank";
+const isCardAccount = id => DuitAccounts.kindOf(id) === "card";
+const accountLabel = id => DuitAccounts.accountName(id, appData.accounts);
+const sourceLabel = src => DuitAccounts.sourceName(src, appData.accounts);
 // Category rules and history matching live in categorise.js. Fixed bills,
 // salary, one-offs, card bill payments and transfers are the user's own rules
 // (rules.js, edited in Settings), saved with the ledger.
@@ -485,8 +495,8 @@ function buildMonths(cleanRows) {
   });
   const months = {};
   Object.entries(byMonth).forEach(([month, txs]) => {
-    const bankTxs = txs.filter(t => BANK_TYPES.has(t.stmtType));
-    const cardTxs = txs.filter(t => CARD_TYPES.has(t.stmtType));
+    const bankTxs = txs.filter(t => isBankAccount(t.account));
+    const cardTxs = txs.filter(t => isCardAccount(t.account));
     let salaryIn = 0, otherIn = 0, giroOut = 0, otherOut = 0, cardSpend = 0;
     const giroCategories = {};
     const otherCategories = {};
@@ -519,7 +529,7 @@ function buildMonths(cleanRows) {
     });
 
     const topMerchants = Object.entries(merchantTotals).filter(([, a]) => a > 0).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, amt]) => ({ name, amt }));
-    const allTx = txs.map(t => ({ date: t.date, account: t.stmtType, description: t.description, withdrawal: t.type === "DR" ? t.amount : null, deposit: t.type === "CR" ? t.amount : null, category: t.category || null, file: t.file || null }))
+    const allTx = txs.map(t => ({ date: t.date, account: t.account, description: t.description, withdrawal: t.type === "DR" ? t.amount : null, deposit: t.type === "CR" ? t.amount : null, category: t.category || null, file: t.file || null }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
     months[month] = {
@@ -540,45 +550,29 @@ function sortMonthKeys(keys) {
 function syncFromText(csvText) {
   return syncFromRows(parseSheetTransactions(csvText));
 }
-// Rows from the PDF parsers already know their statement type. Only rows
-// without one (CSV and paste) fall back to guessing it from descriptions.
+// Rows from the PDF parsers already know their account. Only rows without
+// one (CSV and paste) fall back to guessing it from descriptions, as an
+// account with no number (bank-uob).
 function syncFromRows(rawRows) {
   const byFile = {};
-  rawRows.forEach(r => { if (!r.stmtType) (byFile[r.file] = byFile[r.file] || []).push(r); });
-  const fileType = {};
-  Object.entries(byFile).forEach(([file, rows]) => { fileType[file] = classifyFile(rows); });
-  const clean = rawRows.map(r => ({ ...r, stmtType: r.stmtType || fileType[r.file] }));
+  rawRows.forEach(r => { if (!r.account) (byFile[r.file] = byFile[r.file] || []).push(r); });
+  const fileAccount = {};
+  Object.entries(byFile).forEach(([file, rows]) => {
+    const type = classifyFile(rows);
+    fileAccount[file] = DuitAccounts.isLegacy(type) ? DuitAccounts.fromLegacy(type).id : type;
+  });
+  const clean = rawRows.map(r => ({ ...r, account: r.account || fileAccount[r.file] }));
   const monthTotals = buildMonths(clean);
   const monthKeys = sortMonthKeys(Object.keys(monthTotals));
   return monthKeys.map(k => monthTotals[k]);
 }
 
 // PDFs arrive a statement at a time, and a card statement spans two months,
-// so a PDF import can't replace whole months the way a full CSV does. Instead
-// each touched month is rebuilt from its saved transactions plus the new rows:
-// rows from a re-uploaded file replace that file's earlier rows, and rows saved
-// before transactions carried their file are matched one for one (so three
-// identical purchases stay three) on date, type, amount and description, then
-// on date, type, amount and account. Description goes first because older CSV
-// imports could mislabel the account (POSB saved as "UOB One"); digits are
-// ignored because older imports stripped merchant numbers. Any matched row
-// passes its category on, so hand-set categories survive a re-import.
-function txToRow(tx) {
-  const isDr = tx.withdrawal != null;
-  return { file: tx.file || "", date: tx.date, description: tx.description, amount: isDr ? tx.withdrawal : (tx.deposit || 0), type: isDr ? "DR" : "CR", category: tx.category || "", stmtType: tx.account };
-}
-const descKey = d => String(d || "").toUpperCase().replace(/[\d\s]+/g, "");
-const sameAmount = (a, b) => a.date === b.date && a.type === b.type && Math.abs(a.amount - b.amount) < 0.005;
-function matchOldRows(incoming, pool) {
-  const tiers = [(o, r) => descKey(o.description) === descKey(r.description), (o, r) => o.stmtType === r.stmtType];
-  tiers.forEach(same => incoming.forEach(r => {
-    if (r.matched) return;
-    const old = pool.find(o => !o.matched && sameAmount(o, r) && same(o, r));
-    if (!old) return;
-    old.matched = r.matched = true;
-    if (!r.category && old.category) r.category = old.category;
-  }));
-}
+// so a PDF import can't replace whole months the way a full CSV does. Each
+// touched month is rebuilt from its saved transactions plus the new rows
+// (accounts.js mergeMonth: same-file rows are replaced, older rows matched
+// one for one, categories carried over).
+const txToRow = DuitAccounts.txToRow;
 function planImport(newRows) {
   const files = new Set(newRows.map(r => r.file));
   const existing = {}; appData.months.forEach(m => { existing[m.month] = m; });
@@ -589,13 +583,9 @@ function planImport(newRows) {
   Object.entries(byMonth).forEach(([month, incoming]) => {
     const prev = existing[month];
     if (prev && !(prev.transactions || []).length) manual.push(month);
-    const saved = prev ? (prev.transactions || []).map(txToRow) : [];
-    const sameFile = saved.filter(r => r.file && files.has(r.file));
-    const legacy = saved.filter(r => !r.file);
-    matchOldRows(incoming, sameFile.concat(legacy));
-    const keptLegacy = legacy.filter(r => !r.matched);
-    replaced += sameFile.length + legacy.length - keptLegacy.length;
-    rows.push(...saved.filter(r => r.file && !files.has(r.file)), ...keptLegacy, ...incoming.map(({ matched, ...r }) => r));
+    const merged = DuitAccounts.mergeMonth(prev ? prev.transactions : [], incoming, files);
+    replaced += merged.replaced;
+    rows.push(...merged.rows);
   });
   return { months: syncFromRows(rows), monthKeys: sortMonthKeys(Object.keys(byMonth)), manual, replaced };
 }
@@ -613,7 +603,7 @@ function opexLineItems(months, category) {
     if (!m.cardSpendAvailable) return;
     (m.transactions || []).forEach(tx => {
       if (rules.isTransfer(tx.description) || rules.isCardBill(tx.description) || rules.fixedBillFor(tx.description)) return;
-      const isBank = BANK_TYPES.has(tx.account);
+      const isBank = isBankAccount(tx.account);
       if (isBank && tx.withdrawal == null) return;
       const amount = tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0);
       if (!amount) return;
@@ -647,11 +637,11 @@ const docIdForCommitment = name => name.replace(/[^\w-]+/g, "_") || "item";
 // totals. Fold them into the current ones as they load.
 const canonMonth = m => (m && m.categories ? { ...m, categories: DuitCategorise.canonCategoryTotals(m.categories) } : m);
 // rules: null until the user saves their own, so the defaults apply.
-const emptyData = () => ({ months: [], fixedCommitments: {}, statements: {}, rules: null });
+const emptyData = () => ({ months: [], fixedCommitments: {}, statements: {}, rules: null, accounts: {} });
 function loadLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) { const parsed = JSON.parse(raw); return { months: (parsed.months || []).map(canonMonth), fixedCommitments: parsed.fixedCommitments || {}, statements: parsed.statements || {}, rules: parsed.rules || null }; }
+    if (raw) { const parsed = JSON.parse(raw); return { months: (parsed.months || []).map(canonMonth), fixedCommitments: parsed.fixedCommitments || {}, statements: parsed.statements || {}, rules: parsed.rules || null, accounts: parsed.accounts || {} }; }
   } catch (e) {}
   return emptyData();
 }
@@ -661,7 +651,7 @@ let appData = emptyData();
 let ui = {
   tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true,
   bucketOverview: "opex", bucketDeep: "opex", selectedCat: null,
-  sheet: null, // null | "add" | "paste" | "month" | "settings" | "rules" | "suggest" | "statements"
+  sheet: null, // null | "add" | "paste" | "month" | "settings" | "rules" | "suggest" | "statements" | "accounts"
   rulesDraft: null, suggestions: null, // rule edits wait here until saved
   customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null,
   storage: "connecting", // "connecting" | "synced" | "local"
@@ -691,7 +681,7 @@ async function initPersistence() {
     dbApi = db;
     ui.storage = "synced";
     db.collection("months").onSnapshot(
-      snap => applySnapshotMonths(snap.docs.filter(d => d.exists).map(d => d.data())),
+      snap => { applySnapshotMonths(snap.docs.filter(d => d.exists).map(d => d.data())); migrateLoaded(); },
       err => { ui.storage = "local"; dbApi = null; appData = loadLocal(); resetPeriod(); ui.syncError = "Cross-device sync unavailable (" + err.message + ") — using this browser only."; render(); }
     );
     db.collection("fixedCommitments").onSnapshot(
@@ -703,15 +693,38 @@ async function initPersistence() {
       () => {}
     );
     db.collection("statements").onSnapshot(
-      snap => { const map = {}; snap.docs.filter(d => d.exists).forEach(d => { const r = d.data(); map[r.id] = r; }); appData.statements = map; render(); },
+      snap => { const map = {}; snap.docs.filter(d => d.exists).forEach(d => { const r = d.data(); map[r.id] = r; }); appData.statements = map; migrateLoaded(); render(); },
+      () => {}
+    );
+    db.collection("accounts").onSnapshot(
+      snap => { const map = {}; snap.docs.filter(d => d.exists).forEach(d => { const a = d.data(); map[a.id] = a; }); appData.accounts = map; render(); },
       () => {}
     );
   } else {
     ui.storage = "local";
     appData = loadLocal();
+    migrateLoaded();
     resetPeriod();
     render();
   }
+}
+// Data saved before accounts existed names accounts by statement type.
+// Rewritten once, in place (accounts.js migrate is idempotent, so a synced
+// snapshot that's already migrated changes nothing).
+function migrateLoaded() {
+  const res = DuitAccounts.migrate(appData);
+  if (!res.changed) return;
+  const changed = new Set(res.changedMonths);
+  appData.months = res.months; appData.statements = res.statements; appData.accounts = res.accounts;
+  if (!dbApi) { saveLocal(); return; }
+  const months = res.months.filter(m => changed.has(m.month));
+  const records = Object.values(res.statements).filter(r => r && r.source && !r.inferred);
+  Promise.all([
+    ...months.map(m => dbApi.collection("months").doc(docIdForMonth(m.month)).set(m)),
+    ...res.removedStatements.map(id => dbApi.collection("statements").doc(id).delete()),
+    ...records.map(r => dbApi.collection("statements").doc(r.id).set(r)),
+    ...res.addedAccounts.map(a => dbApi.collection("accounts").doc(a.id).set(a)),
+  ]).catch(err => { ui.syncError = "Couldn't update saved accounts: " + err.message; render(); });
 }
 // Writes months (an array of month objects) to whichever layer is active.
 // With db, each month is its own document — a paste only overwrites the
@@ -727,13 +740,29 @@ async function persistMonths(monthsArr) {
     resetPeriod();
   }
 }
-// One record per account per statement month, so a re-import replaces it.
+// One record per source per statement month, so a re-import replaces it,
+// along with any record it supersedes (statements.js supersededBy).
 async function persistStatements(records) {
+  const saved = Object.values(appData.statements || {});
+  const drop = [...new Set(records.flatMap(r => DuitStatements.supersededBy(saved, r)))];
   if (dbApi) {
     await Promise.all(records.map(r => dbApi.collection("statements").doc(r.id).set(r)));
+    await Promise.all(drop.map(id => dbApi.collection("statements").doc(id).delete()));
   } else {
     appData.statements = { ...appData.statements };
+    drop.forEach(id => { delete appData.statements[id]; });
     records.forEach(r => { appData.statements[r.id] = r; });
+    saveLocal();
+  }
+}
+// New accounts, or a rename or hide of one already saved.
+async function persistAccounts(list) {
+  if (!list.length) return;
+  if (dbApi) {
+    await Promise.all(list.map(a => dbApi.collection("accounts").doc(a.id).set(a)));
+  } else {
+    appData.accounts = { ...appData.accounts };
+    list.forEach(a => { appData.accounts[a.id] = a; });
     saveLocal();
   }
 }
@@ -771,6 +800,8 @@ async function clearAllData() {
     await Promise.all(ssnap.docs.map(d => dbApi.collection("statements").doc(d.id).delete()));
     const rsnap = await dbApi.collection("settings").get();
     await Promise.all(rsnap.docs.map(d => dbApi.collection("settings").doc(d.id).delete()));
+    const asnap = await dbApi.collection("accounts").get();
+    await Promise.all(asnap.docs.map(d => dbApi.collection("accounts").doc(d.id).delete()));
   } else {
     appData = emptyData();
     saveLocal();
@@ -864,6 +895,7 @@ function renderSheet() {
   let key = null, title = "", body = "", closable = true;
   if (ui.sheet === "settings") { key = "settings"; title = "Settings"; body = renderSettings(); }
   else if (ui.sheet === "rules" && ui.rulesDraft) { key = "rules"; title = "Transaction rules"; body = renderRules(); }
+  else if (ui.sheet === "accounts") { key = "accounts"; title = "Accounts"; body = renderAccounts(); }
   else if (ui.sheet === "suggest" && ui.rulesDraft) { key = "suggest"; title = "Suggested fixed bills"; body = renderSuggestions(); }
   else if (ui.pdfImport) { key = "pdf"; title = "Review PDF import"; body = renderPdfReview(); closable = false; }
   else if (ui.sheet === "add") { key = "add"; title = "Add data"; body = renderAddMenu(); }
@@ -924,7 +956,7 @@ function renderPdfReview() {
     return `
     <div class="pdf-file">
       <label class="pdf-head"><input type="checkbox" data-action="pdf-toggle-file" data-idx="${i}" ${f.include ? "checked" : ""}><strong>${esc(f.file)}</strong></label>
-      <div class="pdf-meta">${esc(f.label)}${f.readBy === "gemini" ? ` <span class="pdf-tag" title="${esc(f.model)}">Read by Gemini</span>` : ""} &middot; statement ${esc(f.statementDate)} &middot; ${f.rows.length} row${f.rows.length !== 1 ? "s" : ""}${allOk ? "" : " &middot; <strong>totals don't match, so it's unticked</strong>"}</div>
+      <div class="pdf-meta">${esc((f.accounts || []).map(a => (appData.accounts[a.id] || a).name).join(", ") || f.label)}${f.readBy === "gemini" ? ` <span class="pdf-tag" title="${esc(f.model)}">Read by Gemini</span>` : ""} &middot; statement ${esc(f.statementDate)} &middot; ${f.rows.length} row${f.rows.length !== 1 ? "s" : ""}${allOk ? "" : " &middot; <strong>totals don't match, so it's unticked</strong>"}</div>
       <div class="pdf-checks">${checks}</div>
       <button class="btn small ghost" data-action="pdf-toggle-rows" data-idx="${i}" style="margin-top:8px;">${f.open ? "Hide rows" : "Show rows"}</button>
       ${table}
@@ -987,7 +1019,40 @@ function renderSettings() {
   </div>
   <div class="section-label">Rules</div>
   <button class="action-row" data-action="open-rules">Transaction rules<span>Fixed bills, salary, one-offs, card payments and transfers.</span></button>
+  <button class="action-row" data-action="open-sheet" data-sheet="accounts">Accounts<span>Rename your accounts and cards, or hide ones you've closed.</span></button>
   ${renderDataSettings()}`;
+}
+
+/* ============================== accounts ============================== */
+// Grouped by statement source. A name saves when the field loses focus;
+// clearing it restores the default. Hidden accounts stay in every total.
+function renderAccounts() {
+  const list = Object.values(appData.accounts || {});
+  if (!list.length) return `<p class="paste-help">No accounts yet. They're added as you import statements.</p>`;
+  const bySource = {};
+  list.forEach(a => { const s = DuitAccounts.sourceOf(a.id); (bySource[s] = bySource[s] || []).push(a); });
+  const order = Object.keys(bySource).sort((a, b) => (a.startsWith("bank-") ? 0 : 1) - (b.startsWith("bank-") ? 0 : 1) || a.localeCompare(b));
+  const groups = order.map(src => {
+    const first = bySource[src][0];
+    const rows = bySource[src].sort((a, b) => String(a.number || "").localeCompare(String(b.number || ""))).map(a => `
+    <div class="acct-row${a.hidden ? " hidden-acct" : ""}">
+      <input type="text" class="acct-name" data-id="${esc(a.id)}" value="${esc(a.name || DuitAccounts.defaultName(a))}" aria-label="Name for ${esc(DuitAccounts.defaultName(a))}" maxlength="40" autocomplete="off">
+      <label class="acct-hide"><input type="checkbox" class="acct-hidden" data-id="${esc(a.id)}" ${a.hidden ? "checked" : ""}> Hide</label>
+    </div>
+    <p class="acct-meta">${a.number ? `${esc(first.bank)} ${a.kind === "card" ? "card" : "account"} ending ${esc(a.number)}` : "From imports before account numbers were read"}</p>`).join("");
+    return `<div class="section-label">${esc(`${first.bank} ${first.kind === "card" ? "cards" : "accounts"}`)}</div>${rows}`;
+  }).join("");
+  return `
+  <p class="paste-help">Accounts are added as you import statements, named by bank and the last 4 digits. Hiding one takes it out of the Statements list and its reminders. Its transactions still count.</p>
+  ${groups}`;
+}
+function saveAccountEdit(id, patch) {
+  const a = appData.accounts[id];
+  if (!a) return;
+  const next = { ...a, ...patch };
+  if ("name" in patch && !String(patch.name).trim()) next.name = DuitAccounts.defaultName(a);
+  if (next.name === a.name && !!next.hidden === !!a.hidden) return;
+  persistAccounts([next]).then(render).catch(err => { ui.syncError = "Couldn't save that: " + err.message; render(); });
 }
 
 /* ============================== rules ============================== */
@@ -1192,8 +1257,9 @@ function renderPeriod(from, to, count) {
 }
 
 // A month whose card statements are missing reads as a big drop in spend.
-// Spot it from the card accounts seen in the three months before it.
-function cardAccounts(m) { return new Set((m.transactions || []).map(t => t.account).filter(a => CARD_TYPES.has(a))); }
+// Spot it from the card statement sources seen in the three months before
+// it. Sources, not cards: a new card on the same statement isn't missing.
+function cardAccounts(m) { return new Set((m.transactions || []).map(t => t.account).filter(isCardAccount).map(DuitAccounts.sourceOf)); }
 function missingCards(m) {
   if (!m.cardSpendAvailable || !(m.transactions || []).length) return [];
   const i = appData.months.findIndex(x => x.month === m.month);
@@ -1208,12 +1274,12 @@ function isConfirmed(m) { return m.cardSpendAvailable && !missingCards(m).length
 function partialMonths(months) { return months.filter(m => m.cardSpendAvailable && missingCards(m).length).map(m => m.month); }
 // Which statements are in, from saved records plus older imports inferred
 // from their transactions (statements.js).
-const statementCoverage = () => DuitStatements.coverage(Object.values(appData.statements || {}), appData.months);
+const statementCoverage = () => DuitStatements.coverage(Object.values(appData.statements || {}), appData.months, null, { hidden: src => DuitAccounts.sourceHidden(src, appData.accounts) });
 const shortDate = ms => { const d = new Date(ms); return `${d.getUTCDate()} ${MONTH_ORDER[d.getUTCMonth()]}`; };
 function renderStatementStrip() {
   const issues = DuitStatements.recentIssues(statementCoverage());
   if (!issues.length) return "";
-  const shown = issues.slice(-4).reverse().map(x => `<strong>${esc(x.account)}</strong> ${esc(x.month)} ${x.kind === "due" ? "due" : "missing"}`);
+  const shown = issues.slice(-4).reverse().map(x => `<strong>${esc(sourceLabel(x.account))}</strong> ${esc(x.month)} ${x.kind === "due" ? "due" : "missing"}`);
   const more = issues.length > 4 ? ` and ${issues.length - 4} more` : "";
   return `<div class="card nudge"><p>Statements to import: ${shown.join(" &middot; ")}${more}.</p><div class="btn-row" style="margin-top:0;"><button class="btn small" data-action="open-sheet" data-sheet="statements">View</button><button class="btn small primary" data-action="open-add">Import</button></div></div>`;
 }
@@ -1227,12 +1293,12 @@ function statementCell(cell) {
 function renderStatements() {
   const cov = statementCoverage();
   if (!cov.accounts.length) return `<div class="card"><p class="paste-help" style="margin:0;">No statements imported yet. Import a PDF and it shows up here.</p></div>`;
-  const head = cov.accounts.map(a => `<th class="c">${esc(a.name)}</th>`).join("");
+  const head = cov.accounts.map(a => `<th class="c">${esc(sourceLabel(a.name))}</th>`).join("");
   const body = cov.months.map(m => `<tr><th scope="row">${esc(m)}</th>${cov.accounts.map(a => statementCell(cov.cells[a.name][m])).join("")}</tr>`).join("");
-  const summary = cov.accounts.map(a => `<div class="pdf-check ${a.overdue ? "bad" : "ok"}">${a.overdue ? CROSS_ICON : CHECK_ICON}<span><strong>${esc(a.name)}</strong>: latest ${esc(a.last.statementDate)}${a.overdue ? ", next one overdue" : a.nextDue ? `, next around ${esc(shortDate(a.nextDue))}` : ""}</span></div>`).join("");
+  const summary = cov.accounts.map(a => `<div class="pdf-check ${a.overdue ? "bad" : "ok"}">${a.overdue ? CROSS_ICON : CHECK_ICON}<span><strong>${esc(sourceLabel(a.name))}</strong>: latest ${esc(a.last.statementDate)}${a.overdue ? ", next one overdue" : a.nextDue ? `, next around ${esc(shortDate(a.nextDue))}` : ""}</span></div>`).join("");
   return `
   <div class="card">
-    <p class="paste-help">One statement per account per month, by statement date. A card cycle ending 12 Sep counts as Sep.</p>
+    <p class="paste-help">One row per statement, so a card statement covering several cards is one row. Each month is by statement date: a card cycle ending 12 Sep counts as Sep.</p>
     <div class="scroll-x ledger-wrap"><table class="ledger stmt-grid">
       <thead><tr><th>Month</th>${head}</tr></thead>
       <tbody>${body}</tbody>
@@ -1294,7 +1360,7 @@ function renderOverview(filtered) {
   const delta = (prev && isConfirmed(prev) && isConfirmed(latest)) ? pct(opexAmount(latest), opexAmount(prev)) : null;
   const tone = delta > 15 ? "warn" : delta < -15 ? "ok" : "";
   const latestSub = !latest.cardSpendAvailable ? "no card stmt yet"
-    : latestMissing.length ? `partial: no ${latestMissing.join(", ")} yet`
+    : latestMissing.length ? `partial: no ${latestMissing.map(sourceLabel).join(", ")} yet`
     : delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—";
   const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
 
@@ -1545,7 +1611,7 @@ function renderTxList() {
   const q = (ui.txQuery || "").trim().toLowerCase();
   const all = periodMonths().filtered.flatMap(m => (m.transactions || []).map(tx => ({ ...tx, cat: resolveCategory(tx) })))
     .filter(tx => !(ui.hideIncome && tx.deposit != null && currentRules().isSalary(tx.description)))
-    .filter(tx => !q || [tx.description, tx.cat, tx.account].some(v => String(v || "").toLowerCase().includes(q)))
+    .filter(tx => !q || [tx.description, tx.cat, accountLabel(tx.account)].some(v => String(v || "").toLowerCase().includes(q)))
     .sort((a, b) => dateKey(b.date) - dateKey(a.date));
   if (!all.length) return `<div style="font-size:14px;color:var(--text-2);padding:16px 0;">${q ? "No transactions match." : "No line items in this period. Months entered by hand have totals only."}</div>`;
   const out = all.reduce((s, t) => s + (t.withdrawal || 0), 0), inn = all.reduce((s, t) => s + (t.deposit || 0), 0);
@@ -1556,7 +1622,7 @@ function renderTxList() {
     day = tx.date;
     const isIn = tx.deposit != null;
     return `${head}<div class="tx-row">
-      <div class="tx-main"><div class="tx-desc">${esc(tx.description)}</div><div class="tx-meta">${esc(tx.cat)} &middot; ${esc(tx.account)}</div></div>
+      <div class="tx-main"><div class="tx-desc">${esc(tx.description)}</div><div class="tx-meta">${esc(tx.cat)} &middot; ${esc(accountLabel(tx.account))}</div></div>
       <span class="tx-amt ${isIn ? "in" : ""}">${isIn ? "+" : ""}${esc(fmt(isIn ? tx.deposit : tx.withdrawal))}</span>
     </div>`;
   }).join("");
@@ -1598,7 +1664,7 @@ function watchForUpdates() {
 
 /* ============================== events ============================== */
 let wired = false;
-const OVER_IMPORT = new Set(["settings", "rules", "suggest"]);
+const OVER_IMPORT = new Set(["settings", "rules", "suggest", "accounts"]);
 function wireOnce() {
   if (wired) return; wired = true;
   const root = document.getElementById("app");
@@ -1638,6 +1704,8 @@ function onChange(e) {
     reader.readAsText(file);
     t.value = "";
   }
+  else if (t.classList.contains("acct-name")) saveAccountEdit(t.getAttribute("data-id"), { name: t.value.trim().slice(0, 40) });
+  else if (t.classList.contains("acct-hidden")) saveAccountEdit(t.getAttribute("data-id"), { hidden: t.checked });
   else if (t.id === "pdf-file-input") {
     const files = t.files;
     startPdfImport(files).catch(err => { ui.pdfImport = null; ui.syncError = "PDF import failed: " + err.message; render(); });
@@ -1773,7 +1841,7 @@ function onClick(e) {
   else if (action === "rules-suggest") {
     if (!ui.rulesDraft) return;
     const txs = appData.months.flatMap(m => m.transactions || []);
-    ui.suggestions = DuitRules.suggestFixedBills(txs, ui.rulesDraft, { isBank: a => BANK_TYPES.has(a) });
+    ui.suggestions = DuitRules.suggestFixedBills(txs, ui.rulesDraft, { isBank: isBankAccount });
     ui.sheet = "suggest"; render();
   }
   else if (action === "suggest-add" || action === "suggest-skip") {
@@ -1838,7 +1906,8 @@ function onClick(e) {
     btn.disabled = true; btn.textContent = "Importing…";
     const importedAt = new Date().toISOString();
     const records = st.files.filter(f => f.include).map(f => DuitStatements.recordFromImport(f, importedAt)).filter(Boolean);
-    persistMonths(planImport(rows).months).then(() => persistStatements(records)).then(() => {
+    const found = DuitAccounts.register(appData.accounts, st.files.filter(f => f.include).flatMap(f => f.accounts || [])).added;
+    persistAccounts(found).then(() => persistMonths(planImport(rows).months)).then(() => persistStatements(records)).then(() => {
       ui.pdfImport = null; ui.sheet = null; ui.syncError = null;
       if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
       showToast(`Imported ${rows.length} rows from ${fileCount} file${fileCount !== 1 ? "s" : ""}.`);

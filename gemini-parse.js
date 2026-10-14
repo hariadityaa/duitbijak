@@ -13,7 +13,7 @@
 "use strict";
 
 const pdfImport = typeof module === "object" && module.exports ? require("./pdf-import.js") : root.DuitPdfImport;
-const { check, MONTHS } = pdfImport;
+const { check, MONTHS, finishStatement } = pdfImport;
 
 // All model ids live here. Logic never names a model. Tried top to bottom;
 // the next model runs on 429, 5xx, network errors, timeouts and bad JSON.
@@ -25,7 +25,6 @@ const CONFIG = {
 };
 const KEYS_STORE = "duit-bijak.keys";
 const CONSENT_STORE = "duit-bijak.geminiConsent";
-const STMT_TYPES = { account: "Other account", card: "Other card" };
 
 /* ---------------------------- keys ---------------------------- */
 // Parses "#setup?gemini=..." into { gemini }. Null when it isn't a setup link.
@@ -69,6 +68,7 @@ const RESPONSE_SCHEMA = {
     accountKind: { type: "STRING", enum: ["account", "card"] },
     statementDate: { type: "STRING", description: "YYYY-MM-DD" },
     currency: { type: "STRING", description: "ISO 4217 code, e.g. SGD" },
+    accountLast4: { type: "STRING", nullable: true, description: "Last 4 digits of the account or card number. Null if not printed." },
     openingBalance: { ...money, description: "Account: balance brought forward. Card: previous balance, negative if in credit. Null if not printed." },
     closingBalance: { ...money, description: "Account: balance carried forward. Null if not printed." },
     statementTotal: { ...money, description: "Card: total balance or amount due as printed. Null if not printed." },
@@ -81,6 +81,7 @@ const RESPONSE_SCHEMA = {
           description: { type: "STRING" },
           amount: { type: "NUMBER", description: "Positive" },
           type: { type: "STRING", enum: ["DR", "CR"] },
+          accountLast4: { type: "STRING", nullable: true, description: "Last 4 digits of the account or card this row is listed under, when the statement covers several. Else null." },
         },
         required: ["date", "description", "amount", "type"],
       },
@@ -98,6 +99,7 @@ const SYSTEM_PROMPT = [
   "- amount is always positive. type is DR for money out (withdrawals, purchases, fees, charges) and CR for money in (deposits, payments to the card, refunds).",
   "- accountKind is \"card\" for a credit or charge card statement, else \"account\".",
   "- currency is the statement's own currency as an ISO code.",
+  "- accountLast4 is the last 4 digits of the account or card number as printed. On a statement covering several cards or accounts, set it on each row for the one the row is listed under.",
   "- Copy openingBalance, closingBalance and statementTotal exactly as printed. Never compute them. Use null when not printed.",
   "- Copy numbers exactly. Do not invent or guess transactions.",
 ].join("\n");
@@ -169,6 +171,8 @@ function isoToApp(s) {
 const toCents = n => Math.round(n * 100);
 const isMoney = v => typeof v === "number" && isFinite(v);
 
+const last4Of = v => (typeof v === "string" && /^\d{4}$/.test(v.trim()) ? v.trim() : null);
+
 // Checks every row. Returns { rows, dropped }: rows in the app's shape
 // (amount rounded to cents), and the reasons for any row that failed.
 function validateRows(raw) {
@@ -182,7 +186,8 @@ function validateRows(raw) {
     if (!r || !isMoney(r.amount) || toCents(r.amount) <= 0) why.push("bad amount");
     if (!r || (r.type !== "DR" && r.type !== "CR")) why.push("bad type");
     if (why.length) { dropped.push(`Row ${i + 1}: ${why.join(", ")}`); return; }
-    rows.push({ date, description, amount: toCents(r.amount) / 100, type: r.type });
+    // A bad number is dropped, not the row: it only decides which account.
+    rows.push({ date, description, amount: toCents(r.amount) / 100, type: r.type, number: last4Of(r.accountLast4) });
   });
   return { rows, dropped };
 }
@@ -214,13 +219,21 @@ function toStatement(obj, fileName, model) {
   const statementDate = isoToApp(obj.statementDate);
   if (!statementDate) return { file: fileName, error: "Gemini returned no valid statement date." };
   const bank = (typeof obj.bank === "string" && obj.bank.trim().slice(0, 40)) || "Other";
-  const stmtType = STMT_TYPES[kind];
   const { rows, dropped } = validateRows(obj.rows);
   if (!rows.length) return { file: fileName, error: "Gemini found no transactions on this statement." };
+  // Rows without a number take the statement's, or the one number the
+  // other rows agree on, so a single card doesn't split in two.
+  const top = last4Of(obj.accountLast4);
+  const seen = [...new Set(rows.map(r => r.number).filter(Boolean))];
+  const fallback = top || (seen.length === 1 ? seen[0] : null);
+  const appKind = kind === "card" ? "card" : "bank";
   return {
-    file: fileName, bank, stmtType, label: `${bank} ${kind}`, statementDate,
-    rows: rows.map(r => ({ file: fileName, bank, date: r.date, description: r.description, amount: r.amount, type: r.type, category: "", stmtType })),
-    checks: statementChecks({ ...obj, accountKind: kind }, rows, dropped),
+    ...finishStatement(fileName, {
+      bank, kind: appKind, label: `${bank} ${kind}`, statementDate,
+      rows: rows.map(r => ({ ...r, number: r.number || fallback })),
+      numbers: top ? [top] : [],
+      checks: statementChecks({ ...obj, accountKind: kind }, rows, dropped),
+    }),
     readBy: "gemini", model,
   };
 }
@@ -278,7 +291,7 @@ async function testKey(key, opts) {
 }
 
 const api = {
-  CONFIG, KEYS_STORE, CONSENT_STORE, RESPONSE_SCHEMA, STMT_TYPES,
+  CONFIG, KEYS_STORE, CONSENT_STORE, RESPONSE_SCHEMA,
   parseSetupFragment, buildSetupLink, loadKeys, saveKeys, clearKeys, maskKey, hasConsent, giveConsent,
   statementText, buildRequest, extractText, validateRows, statementChecks, toStatement, parseWithGemini, testKey, GeminiError,
 };
