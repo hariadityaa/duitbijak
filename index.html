@@ -1604,7 +1604,7 @@ function renderOverview(filtered) {
   const totalSavings = filtered.reduce((s, m) => s + savingsAmount(m), 0);
   const totalSalary = filtered.reduce((s, m) => s + (m.salaryIn || 0), 0);
   const savingsRate = totalSalary > 0 ? Math.round(totalSavings / totalSalary * 100) : null;
-  const savingsSub = ui.hideIncome ? "rate hidden with income" : savingsRate != null ? `${savingsRate}% of salary` : "no salary in period";
+  const savingsSub = savingsRate != null ? `${savingsRate}% of salary` : "no salary in period";
 
   // Op-Ex per-month figures divide by confirmed months only, so a partial
   // month (a card statement still missing) doesn't pull the averages down.
@@ -1692,7 +1692,7 @@ function renderOverview(filtered) {
     <div class="metric"><div class="metric-label">Core Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
     <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">core, after reimbursements</div></div>
     <div class="metric"><div class="metric-label">Total out</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
-    <div class="metric wide"><div class="metric-label">Savings / mo</div><div class="metric-value">${esc(fmt(totalSavings / filtered.length))}</div><div class="metric-sub">${esc(savingsSub)}</div></div>
+    ${ui.hideIncome ? "" : `<div class="metric wide"><div class="metric-label">Savings / mo</div><div class="metric-value">${esc(fmt(totalSavings / filtered.length))}</div><div class="metric-sub">${esc(savingsSub)}</div></div>`}
     ${oneOffTotal || pendingSuggestions ? `<div class="metric wide"><div class="metric-label">One-offs</div>
       <div class="metric-value">${esc(fmt(oneOffTotal))}<small> &middot; ${esc(fmt(oneOffTotal / filtered.length))}/mo</small></div>
       <div class="metric-sub">${oneOffByType.map(([t, v]) => `${esc(t)} ${esc(fmt(v))}`).join(" &middot; ") || "None flagged yet"}${pendingSuggestions ? ` &middot; <button class="link-btn" data-action="open-sheet" data-sheet="review">${pendingSuggestions} to review</button>` : ""}</div></div>` : ""}
