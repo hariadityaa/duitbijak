@@ -1,6 +1,6 @@
-// Bump this on any change to the cached files below so old clients pick up
-// the update instead of serving a stale app shell forever.
-const CACHE_NAME = "duit-bijak-v2";
+// Bump this on any deploy that changes the files below. A new sw.js is what
+// tells open copies of the app that an update is ready. CI checks the bump.
+const CACHE_NAME = "duit-bijak-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -11,9 +11,13 @@ const APP_SHELL = [
   "./icons/apple-touch-icon.png",
 ];
 
+// cache: "reload" skips the browser's HTTP cache. GitHub Pages sends
+// max-age=600, so without it a new worker could cache the old files.
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(APP_SHELL.map(u => new Request(u, { cache: "reload" }))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -25,23 +29,21 @@ self.addEventListener("activate", event => {
   );
 });
 
-// Cache-first for the app shell so it works offline; everything else (fonts,
-// any future cross-origin request) just goes straight to the network.
+// Network-first for same-origin GETs, so a deploy lands on the next load.
+// Falls back to the cached shell when offline. Cross-origin (fonts) is untouched.
 self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
-  const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
+  const req = event.request;
+  if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
+    fetch(req, { cache: "no-cache" })
+      .then(response => {
         if (response.ok) {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+          caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
         }
         return response;
-      }).catch(() => cached);
-    })
+      })
+      .catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match("./index.html")))
   );
 });
