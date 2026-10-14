@@ -125,6 +125,60 @@ test("falls back to a regex when no shared plain keyword fits", () => {
   assert.strictEqual(s.name, "Acme Insure");
 });
 
+test("export then parse gives the same rules back", () => {
+  const mine = { fixedBills: [{ name: "Rent", match: "LANDLORD" }], salary: ["ACME"], savingsCategories: ["Investment"] };
+  const file = JSON.stringify(R.exportRules(mine));
+  const { rules, skipped } = R.parseRulesText(file);
+  assert.deepStrictEqual(skipped, []);
+  assert.deepStrictEqual(rules.fixedBills, [{ name: "Rent", match: "LANDLORD" }]);
+  assert.deepStrictEqual(rules.salary, ["ACME"]);
+});
+
+test("parse takes chat-style fences, bare rules and full backups; leaves missing lists empty", () => {
+  const reply = "Here you go:\n```json\n{ \"salary\": [\"ACME PTE\"], \"fixedBills\": [{\"name\": \"Gym\", \"match\": \"/FITNESS.*FIRST/\"}] }\n```";
+  const a = R.parseRulesText(reply).rules;
+  assert.deepStrictEqual(a.salary, ["ACME PTE"]);
+  assert.deepStrictEqual(a.internalTransfers, [], "not defaulted, so a merge adds nothing");
+  const backup = JSON.stringify({ app: "duit-bijak", version: 1, data: { months: [], rules: { salary: ["X CORP"] } } });
+  assert.deepStrictEqual(R.parseRulesText(backup).rules.salary, ["X CORP"]);
+});
+
+test("parse skips bad patterns, and throws on text with no rules", () => {
+  const { rules, skipped } = R.parseRulesText(JSON.stringify({ salary: ["/(oops/", "ACME"], fixedBills: [{ name: "Bad", match: "/(x/" }, { name: "", match: "Y" }] }));
+  assert.deepStrictEqual(rules.salary, ["ACME"]);
+  assert.deepStrictEqual(rules.fixedBills, []);
+  assert.strictEqual(skipped.length, 2);
+  assert.throws(() => R.parseRulesText("nothing here"), /No rules found/);
+  assert.throws(() => R.parseRulesText("{ nope }"), /valid JSON/);
+  assert.throws(() => R.parseRulesText("{\"hello\": 1}"), /No rules found/);
+});
+
+test("merge adds only what's new and removes nothing", () => {
+  const base = { fixedBills: [{ name: "Rent", match: "LANDLORD" }], salary: ["ACME"] };
+  const inc = { fixedBills: [{ name: "rent", match: "OTHER" }, { name: "Gym", match: "FITNESS" }], salary: ["acme", "BETA"], internalTransfers: [] };
+  const { rules, added } = R.mergeRules(base, inc);
+  assert.strictEqual(added, 2);
+  assert.deepStrictEqual(rules.fixedBills.map(b => b.name), ["Rent", "Gym"]);
+  assert.deepStrictEqual(rules.salary, ["ACME", "BETA"]);
+  assert.deepStrictEqual(rules.internalTransfers, R.DEFAULT_RULES.internalTransfers, "an empty incoming list leaves the base alone");
+  assert.strictEqual(R.mergeRules(rules, inc).added, 0, "merging twice adds nothing");
+});
+
+test("prompt holds the schema, current rules and one line per merchant, with no dates or accounts", () => {
+  const txs = [
+    { date: "02 Jan 2026", account: "bank-dbs-1234", description: "GIRO SALARY ACME PTE", deposit: 5000 },
+    { date: "02 Feb 2026", account: "bank-dbs-1234", description: "GIRO SALARY ACME PTE", deposit: 5100 },
+    { date: "03 Feb 2026", account: "bank-dbs-1234", description: "HDB LOAN 99887766", withdrawal: 1800 },
+    { date: "04 Feb 2026", account: "bank-dbs-1234", description: "ZERO", withdrawal: 0 },
+  ];
+  const p = R.buildRulesPrompt(txs, { salary: ["MY SALARY"] });
+  assert.ok(p.includes("\"salary\":[\"MY SALARY\"]"));
+  assert.ok(p.includes("CR | 2x | about 5050 | GIRO SALARY ACME PTE"));
+  assert.ok(p.includes("DR | 1x | about 1800 | HDB LOAN 99887766"));
+  assert.ok(!p.includes("ZERO") && !p.includes("bank-dbs-1234") && !p.includes("Jan 2026"));
+  assert.strictEqual(R.buildRulesPrompt(txs, null, { max: 1 }).split("\n").filter(l => /^(DR|CR) \|/.test(l)).length, 1);
+});
+
 let failed = 0;
 tests.forEach(([name, fn]) => {
   try { fn(); console.log("ok   " + name); }

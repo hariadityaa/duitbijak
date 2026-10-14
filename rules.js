@@ -176,7 +176,97 @@ function suggestFixedBills(txs, raw, opts) {
   return out.sort((a, b) => b.avg - a.avg);
 }
 
-const api = { DEFAULT_RULES, BUILT_IN_ONE_OFF, compilePattern, patternError, normaliseRules, compileRules, routeBankTx, routeCardTx, suggestFixedBills };
+/* ---------------------------- sharing ---------------------------- */
+// Rules travel as a small JSON file, or as the reply to a prompt pasted into
+// an AI chat. Both are merged into the draft, never saved straight away.
+const isObj = v => !!v && typeof v === "object" && !Array.isArray(v);
+const RULE_KEYS = ["fixedBills", ...LISTS];
+
+function exportRules(raw, exportedAt) {
+  return { app: "duit-bijak", kind: "rules", version: 1, exportedAt: exportedAt || new Date().toISOString(), rules: normaliseRules(raw) };
+}
+
+// Accepts an exported rules file, a full backup, or a bare rules object, with
+// or without chat-style code fences around it. Returns only what the text
+// holds (missing lists stay empty, so a merge adds nothing for them) and the
+// patterns it had to leave out. Throws with a reason a person can act on.
+function parseRulesText(text) {
+  const s = String(text == null ? "" : text);
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a === -1 || b <= a) throw new Error("No rules found in that text.");
+  let obj;
+  try { obj = JSON.parse(s.slice(a, b + 1)); } catch (e) { throw new Error("That isn't valid JSON."); }
+  if (isObj(obj) && obj.app === "duit-bijak") obj = obj.kind === "rules" ? obj.rules : isObj(obj.data) ? obj.data.rules : null;
+  if (!isObj(obj) || !RULE_KEYS.some(k => Array.isArray(obj[k]))) throw new Error("No rules found in that text.");
+  const skipped = [];
+  const ok = (p, label) => { const err = patternError(p); if (err) skipped.push(`${label}: ${err}`); return !err; };
+  const out = { fixedBills: [] };
+  (Array.isArray(obj.fixedBills) ? obj.fixedBills : []).forEach(b => {
+    const name = String((b && b.name) || "").trim(), match = String((b && b.match) || "").trim();
+    if (name && match && ok(match, name)) out.fixedBills.push({ name, match });
+  });
+  LISTS.forEach(k => {
+    const list = cleanList(obj[k]);
+    out[k] = LABEL_LISTS.includes(k) ? list : list.filter(p => ok(p, p));
+  });
+  return { rules: out, skipped };
+}
+const LABEL_LISTS = ["oneOffCategories", "savingsCategories"];
+
+// Adds what's new in `incoming` to `base`. Nothing is removed. Returns the
+// merged rules and how many entries were added.
+function mergeRules(base, incoming) {
+  const b = normaliseRules(base), inc = incoming || {};
+  let added = 0;
+  const names = new Set(b.fixedBills.map(x => x.name.toUpperCase())), matches = new Set(b.fixedBills.map(x => x.match.toUpperCase()));
+  (inc.fixedBills || []).forEach(x => {
+    if (!x || !x.name || !x.match || names.has(x.name.toUpperCase()) || matches.has(x.match.toUpperCase())) return;
+    names.add(x.name.toUpperCase()); matches.add(x.match.toUpperCase());
+    b.fixedBills.push({ name: x.name, match: x.match }); added++;
+  });
+  LISTS.forEach(k => {
+    const have = new Set(b[k].map(v => v.toUpperCase()));
+    cleanList(inc[k]).forEach(v => { if (!have.has(v.toUpperCase())) { have.add(v.toUpperCase()); b[k].push(v); added++; } });
+  });
+  return { rules: normaliseRules(b), added };
+}
+
+// Text to paste into an AI chat. It holds the schema, the current rules and a
+// sample of transaction descriptions, one line per merchant, so the person
+// can read exactly what they're sending. txs are saved ledger rows.
+function buildRulesPrompt(txs, raw, opts) {
+  const o = { max: 120, ...(opts || {}) };
+  const groups = new Map();
+  (txs || []).forEach(tx => {
+    if (!tx || !tx.description) return;
+    const out = tx.withdrawal != null;
+    const amount = out ? tx.withdrawal : tx.deposit;
+    if (!(amount > 0)) return;
+    const key = (out ? "DR " : "CR ") + (categorise.merchantKey(tx.description) || tx.description.toUpperCase());
+    if (!groups.has(key)) groups.set(key, { type: out ? "DR" : "CR", amounts: [], example: tx.description });
+    const g = groups.get(key); g.amounts.push(amount); g.example = tx.description;
+  });
+  const lines = [...groups.values()].sort((x, y) => y.amounts.length - x.amounts.length || median(y.amounts) - median(x.amounts)).slice(0, o.max)
+    .map(g => `${g.type} | ${g.amounts.length}x | about ${Math.round(median(g.amounts))} | ${g.example.replace(/\s+/g, " ").trim()}`);
+  return `I use a personal finance app that sorts bank transactions with rules. Using the transactions below, suggest rules in the JSON shape shown. Reply with JSON only.
+
+Rules:
+- "fixedBills": recurring bank debits to count as fixed. Each is {"name": "...", "match": "..."}.
+- "salary": text found in salary credits.
+- "cardBillPayments": text in payments from my bank account to my own credit cards.
+- "internalTransfers": text in transfers between my own accounts.
+- "oneOffCategories" and "savingsCategories": leave as they are unless a category is clearly needed.
+- A match is plain text, found anywhere in the description in any case. Wrap it in /slashes/ for a regex. Prefer short plain text. Do not repeat anything already in my current rules.
+
+My current rules:
+${JSON.stringify(normaliseRules(raw))}
+
+Transactions (type | how often | typical amount | example description):
+${lines.join("\n")}
+`;
+}
+
+const api = { DEFAULT_RULES, BUILT_IN_ONE_OFF, compilePattern, patternError, normaliseRules, compileRules, routeBankTx, routeCardTx, suggestFixedBills, exportRules, parseRulesText, mergeRules, buildRulesPrompt };
 if (typeof module === "object" && module.exports) module.exports = api;
 else root.DuitRules = api;
 })(typeof self !== "undefined" ? self : this);
