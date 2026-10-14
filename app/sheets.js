@@ -191,12 +191,12 @@ function renderAddMonth() {
 }
 
 /* ============================== total out ============================== */
-// Fixed bills and savings can back out salary, so with income hidden they
-// show as one figure, as in the month drill.
+// Fixed bills are spend and savings aren't, so they always show apart. The
+// savings rate would back out salary, so it shows only with income visible.
 function outSplit(b, savingsRate) {
-  const parts = [["Spend", b.spend], ["One-offs", b.oneOffs + b.ruleOneOffs]];
-  if (ui.hideIncome) parts.push(["Fixed & saved", b.fixed + b.saved]);
-  else parts.push(["Fixed", b.fixed], ["Saved", b.saved, savingsRate != null && b.saved ? ` (${savingsRate}% of money in)` : ""]);
+  const showRate = !ui.hideIncome && savingsRate != null && b.saved;
+  const parts = [["Spend", b.spend], ["One-offs", b.oneOffs + b.ruleOneOffs], ["Fixed", b.fixed],
+    ["Saved", b.saved, showRate ? ` (${savingsRate}% of money in)` : ""]];
   return parts.filter(([, v]) => v).map(([k, v, note]) => `${k} ${fmt(v)}${note || ""}`).join(" · ");
 }
 // From core op-ex to Total out, one step a row.
@@ -211,8 +211,8 @@ function renderOutSheet() {
     ["Spend, no card statement", "Bank spend in months still waiting on cards", signed(b.noCard)],
     ["One-offs paid", byType || "Flagged rows, at what was paid", signed(b.oneOffs)],
     ["Other one-offs", "Your one-off categories", signed(b.ruleOneOffs)],
-    ...(ui.hideIncome ? [["Fixed bills & savings", "", signed(b.fixed + b.saved)]]
-      : [["Fixed bills", "", signed(b.fixed)], ["Savings", "", signed(b.saved)]]),
+    ["Fixed bills", "", signed(b.fixed)],
+    ["Savings", "", signed(b.saved)],
   ].filter(([k, , v], i) => i === 0 || v !== "+$0");
   return `<p class="paste-help">Core op-ex is the running cost of living, not cash. Total out is every dollar that left. This is the bridge for ${esc(periodLabel(filtered))}.</p>
   ${rows.map(([k, note, v]) => `<div class="item-row"><span class="item-desc">${esc(k)}${note ? `<small class="out-note">${esc(note)}</small>` : ""}</span><span class="item-amt">${esc(v)}</span></div>`).join("")}
