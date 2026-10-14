@@ -51,5 +51,5 @@ Modules are UMD-style (`(function (root) {...})`) so they load in the browser an
 
 ## Workflow
 Branch, push, open a PR, wait for CI, squash-merge when green, confirm the Pages deploy.
-- Wait on CI and the deploy with `mcp__github__pull_request_read` / `mcp__github__actions_list`, or a Monitor until-loop. Never a `sleep` loop in Bash: auto mode blocks it.
-- Deploy is live when `curl -s https://hariadityaa.github.io/duitbijak/sw.js` shows the new `CACHE_NAME`. One check, not a polling loop.
+- Wait on CI and the deploy with one background poll each: a Bash `run_in_background` until-loop that exits on the result and prints only the final status line. Never a foreground `sleep`. Don't subscribe to PR activity.
+- Deploy is live when `curl -s https://hariadityaa.github.io/duitbijak/sw.js` shows the new `CACHE_NAME`. Use that as the deploy poll's exit condition.
