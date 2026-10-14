@@ -367,6 +367,7 @@
 <script src="categorise.js"></script>
 <script src="statements.js"></script>
 <script src="rules.js"></script>
+<script src="backup.js"></script>
 <script>
 (function(){
 "use strict";
@@ -907,6 +908,32 @@ async function deleteFixedCommitment(name) {
     saveLocal();
   }
 }
+// A restore replaces everything, as a clear followed by an import would.
+async function restoreAllData(data) {
+  if (dbApi) {
+    await clearAllData();
+    await Promise.all([
+      ...data.months.map(m => dbApi.collection("months").doc(docIdForMonth(m.month)).set(m)),
+      ...Object.entries(data.fixedCommitments).map(([name, amount]) => dbApi.collection("fixedCommitments").doc(docIdForCommitment(name)).set({ name, amount })),
+      ...Object.values(data.statements).filter(r => r && r.id).map(r => dbApi.collection("statements").doc(r.id).set(r)),
+      ...Object.values(data.accounts).filter(a => a && a.id).map(a => dbApi.collection("accounts").doc(a.id).set(a)),
+      ...(data.rules ? [dbApi.collection("settings").doc("rules").set(data.rules)] : []),
+    ]);
+  } else {
+    appData = { ...data, months: sortMonthKeys(data.months.map(m => m.month)).map(k => canonMonth(data.months.find(m => m.month === k))) };
+    saveLocal();
+    migrateLoaded();
+    periodCount = -1;
+    resetPeriod();
+  }
+}
+function downloadFile(name, type, text) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 async function clearAllData() {
   if (dbApi) {
     const snap = await dbApi.collection("months").get();
@@ -1256,6 +1283,16 @@ function renderDataSettings() {
   <div class="section-label">Your data</div>
   <p class="settings-meta">${esc(statusText)} &middot; ${months.length} month${months.length !== 1 ? "s" : ""} (${esc(range)})${ui.lastSynced ? ` &middot; updated ${esc(ui.lastSynced)}` : ""}<br>Reads UOB, POSB and DBS card statements.</p>
   <div class="btn-row" style="margin-top:0;"><button class="btn" data-action="open-sheet" data-sheet="statements">Statements imported</button><button class="btn danger" data-action="clear-data">${ui.confirmClear ? "Really clear? Tap again" : "Clear all data"}</button></div>
+  <div class="section-label">Backup</div>
+  <p class="settings-meta">The JSON backup holds everything and restores it exactly. The CSV lists every transaction with its category, for a spreadsheet.</p>
+  <div class="btn-row" style="margin-top:0;">
+    <button class="btn" data-action="export-json" ${months.length ? "" : "disabled"}>Back up (JSON)</button>
+    <button class="btn" data-action="export-csv" ${months.length ? "" : "disabled"}>Export CSV</button>
+    <button class="btn ghost" data-action="trigger-restore">Restore backup</button>
+  </div>
+  <input type="file" accept=".json,application/json" id="restore-file-input" style="display:none">
+  ${ui.restore ? `<div class="card" style="margin-top:12px;"><p class="paste-help" style="margin-top:0;">Replace all data in this app with <strong>${esc(ui.restore.name)}</strong>? It has ${ui.restore.data.months.length} month${ui.restore.data.months.length !== 1 ? "s" : ""}. What's here now is lost.</p>
+    <div class="btn-row"><button class="btn danger" data-action="confirm-restore">Replace with backup</button><button class="btn ghost" data-action="cancel-restore">Cancel</button></div></div>` : ""}
   <p class="settings-meta" style="margin-top:24px;"><a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> is a local-only finance ledger. Nothing you enter leaves your browser, unless you choose to read a statement with Gemini.</p>`;
 }
 
@@ -1858,6 +1895,13 @@ function onChange(e) {
   }
   else if (t.classList.contains("acct-name")) saveAccountEdit(t.getAttribute("data-id"), { name: t.value.trim().slice(0, 40) });
   else if (t.classList.contains("acct-hidden")) saveAccountEdit(t.getAttribute("data-id"), { hidden: t.checked });
+  else if (t.id === "restore-file-input") {
+    const file = t.files && t.files[0];
+    if (!file) return;
+    file.text().then(text => { ui.restore = { name: file.name, data: DuitBackup.parseBackup(text) }; ui.syncError = null; render(); })
+      .catch(err => { ui.restore = null; ui.syncError = err.message; render(); });
+    t.value = "";
+  }
   else if (t.id === "pdf-file-input") {
     const files = t.files;
     startPdfImport(files).catch(err => { ui.pdfImport = null; ui.syncError = "PDF import failed: " + err.message; render(); });
@@ -1896,7 +1940,7 @@ function onClick(e) {
   if (action === "close-sheet") {
     // The backdrop carries this action too; only a tap on the backdrop itself closes.
     if (btn.classList.contains("sheet-backdrop") && e.target !== btn) return;
-    ui.sheet = null; ui.keyTest = null; ui.selectedCat = null; render();
+    ui.sheet = null; ui.keyTest = null; ui.selectedCat = null; ui.restore = null; render();
   }
   else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; ui.txLimit = 0; ui.editTx = null; render(); window.scrollTo(0, 0); }
   else if (action === "edit-spend") { const k = btn.getAttribute("data-key"); ui.editTx = ui.editTx === k ? null : k; render(); }
@@ -1945,6 +1989,23 @@ function onClick(e) {
     if (!text.trim()) return;
     btn.disabled = true; btn.textContent = "Processing…";
     ingestText(text, "", true);
+  }
+  else if (action === "export-json") {
+    downloadFile(DuitBackup.backupFileName("json"), "application/json", JSON.stringify(DuitBackup.buildBackup(appData), null, 1));
+    showToast("Backup saved.");
+  }
+  else if (action === "export-csv") {
+    downloadFile(DuitBackup.backupFileName("csv"), "text/csv", DuitBackup.transactionsCsv(appData.months, { accountName: accountLabel, category: resolveCategory }));
+    showToast("CSV saved.");
+  }
+  else if (action === "trigger-restore") { const input = document.getElementById("restore-file-input"); if (input) input.click(); }
+  else if (action === "cancel-restore") { ui.restore = null; render(); }
+  else if (action === "confirm-restore") {
+    const r = ui.restore;
+    if (!r) return;
+    btn.disabled = true;
+    restoreAllData(r.data).then(() => { ui.restore = null; ui.syncError = null; showToast(`Restored ${r.data.months.length} month${r.data.months.length !== 1 ? "s" : ""}.`); render(); })
+      .catch(err => { ui.syncError = "Couldn't restore: " + err.message; render(); });
   }
   else if (action === "trigger-csv-import") {
     const input = document.getElementById("csv-file-input");

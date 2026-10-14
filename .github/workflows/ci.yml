@@ -22,6 +22,7 @@ jobs:
           node --check categorise.js
           node --check statements.js
           node --check rules.js
+          node --check backup.js
           node -e '
             const html = require("fs").readFileSync("index.html", "utf8");
             const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
@@ -41,13 +42,15 @@ jobs:
         run: node tests/statements.test.js
       - name: Rules tests
         run: node tests/rules.test.js
+      - name: Backup tests
+        run: node tests/backup.test.js
       # Pages serves this branch as-is, so nothing stamps a version at deploy.
       # Without a new sw.js, installed copies never see the update.
       - name: Service worker version bumped
         if: github.event_name == 'pull_request'
         run: |
           base=${{ github.event.pull_request.base.sha }}
-          changed=$(git diff --name-only "$base" HEAD -- index.html manifest.json icons sw.js accounts.js pdf-import.js gemini-parse.js categorise.js statements.js rules.js vendor)
+          changed=$(git diff --name-only "$base" HEAD -- index.html manifest.json icons sw.js accounts.js pdf-import.js gemini-parse.js categorise.js statements.js rules.js backup.js vendor)
           [ -z "$changed" ] && { echo "App files unchanged."; exit 0; }
           old=$(git show "$base:sw.js" | grep -o 'duit-bijak-v[0-9]*')
           new=$(grep -o 'duit-bijak-v[0-9]*' sw.js)
