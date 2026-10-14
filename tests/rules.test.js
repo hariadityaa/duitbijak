@@ -179,6 +179,50 @@ test("prompt holds the schema, current rules and one line per merchant, with no 
   assert.strictEqual(R.buildRulesPrompt(txs, null, { max: 1 }).split("\n").filter(l => /^(DR|CR) \|/.test(l)).length, 1);
 });
 
+const cr = (month, description, deposit, extra) => ({ date: `05 ${month} 2026`, account: "bank-dbs-1111", description, deposit, ...extra });
+const pn = (name, memo) => `FAST Payment / Receipt Incoming PayNow Ref 123456 From: ${name} ${memo || "PayNow transfer Other"}`;
+
+test("PayNow sender is the all-caps run before the memo; companies and mixed case are skipped", () => {
+  assert.strictEqual(R.paynowSender(pn("LEONG KHAI CHOONG STEPHEN", "Padel Other")), "LEONG KHAI CHOONG STEPHEN");
+  assert.strictEqual(R.paynowSender(pn("MOHAMAD FAUZI BIN IBRAHIM", "OTHR")), "MOHAMAD FAUZI BIN IBRAHIM", "the bank's OTHR tag is not part of the name");
+  assert.strictEqual(R.paynowSender("FAST Payment / Receipt Incoming PayNow Ref 1 From: Aspire FT - Testing"), null);
+  assert.strictEqual(R.paynowSender(pn("KOVE INTERIOR DESIGN P", "Other")), null);
+  assert.strictEqual(R.paynowSender("FAST Payment / Receipt Transfer UOVBSGSGBRT Other"), null);
+});
+
+test("repayment suggestions group by sender and flag large credits", () => {
+  const txs = [
+    cr("Mar", pn("WAHYU DYATMIKO", "Splitwise Other"), 40), cr("Apr", pn("WAHYU DYATMIKO", "Transfer - Mobile Other"), 95),
+    cr("Apr", pn("WAHYU DYATMIKO DINNER", "Other"), 20),
+    cr("Feb", pn("LIM TZE HEE", "casa Other"), 4280),
+    cr("Mar", pn("TEST PERSON", "Other"), 0.02),
+    cr("Mar", pn("ALREADY DONE", "Other"), 10, { category: "Dining" }),
+  ];
+  const out = R.suggestReimbursers(txs, {}, { isBank: a => a.startsWith("bank") });
+  assert.deepStrictEqual(out.map(s => s.name), ["Wahyu Dyatmiko", "Lim Tze Hee"], "caps memo joins the shorter name; tiny and categorised rows left out");
+  assert.strictEqual(out[0].count, 3);
+  assert.strictEqual(out[0].total, 155);
+  assert.strictEqual(out[0].match, "From: WAHYU DYATMIKO");
+  assert.strictEqual(out[0].check, false);
+  assert.strictEqual(out[1].check, true);
+});
+
+test("a confirmed or declined sender stops being suggested; card rows and debits never are", () => {
+  const txs = [cr("Mar", pn("WAHYU DYATMIKO"), 40), cr("Mar", pn("LIM TZE HEE"), 60), { ...cr("Mar", pn("CARD PERSON"), 5), account: "card-dbs-2222" }, { date: "05 Mar 2026", account: "bank-dbs-1111", description: pn("PAID OUT"), withdrawal: 9 }];
+  const isBank = a => a.startsWith("bank");
+  assert.strictEqual(R.suggestReimbursers(txs, {}, { isBank }).length, 2);
+  const rules = { reimbursedBy: ["From: WAHYU DYATMIKO"], notReimbursements: ["From: LIM TZE HEE"] };
+  assert.strictEqual(R.suggestReimbursers(txs, rules, { isBank }).length, 0);
+  const c = R.compileRules(rules);
+  assert.ok(c.isReimbursement(pn("WAHYU  DYATMIKO", "Padel Other")), "spacing is flexible");
+  assert.ok(!c.isReimbursement(pn("SOMEONE ELSE")));
+});
+
+test("new rule lists default to empty and survive normalise", () => {
+  assert.deepStrictEqual(R.normaliseRules({ salary: ["X"] }).reimbursedBy, []);
+  assert.deepStrictEqual(R.normaliseRules({ reimbursedBy: [" From: A B ", "from: a b"] }).reimbursedBy, ["From: A B"]);
+});
+
 let failed = 0;
 tests.forEach(([name, fn]) => {
   try { fn(); console.log("ok   " + name); }
