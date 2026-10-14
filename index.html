@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Duit Bijak — Finance Ledger</title>
 <meta name="color-scheme" content="dark">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="A local-only finance ledger. Nothing you enter leaves your browser.">
 <meta name="theme-color" content="#0a0a0a">
 <link rel="manifest" href="manifest.json">
@@ -48,7 +48,10 @@
     font-family:var(--font-sans); font-size:16px; line-height:1.5;
     -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
   }
-  .num{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+  body.sheet-open{ overflow:hidden; }
+  body.sheet-open .fab{ display:none; }
+  /* Aligned figures without monospace: Android has no ui-monospace, and its fallback spaces out commas */
+  .num, .metric-value, .month-total, .row2-amt, .row2-total, .row2-delta, .item-date, .item-amt, .tx-amt, table.ledger{ font-variant-numeric:tabular-nums; }
   h1,h2,h3{ font-weight:600; line-height:1.25; text-wrap:balance; margin:0; }
   a{ color:inherit; }
   button{ font-family:inherit; }
@@ -56,19 +59,95 @@
   :focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
   @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
 
-  .wrap{ max-width:1120px; margin:0 auto; padding:24px 16px 64px; }
-  @media (min-width:640px){ .wrap{ padding:32px 24px 64px; } }
+  /* Bottom nav height, not counting the safe area below it */
+  :root{ --nav-h:56px; --gutter:16px; }
+  @media (min-width:640px){ :root{ --gutter:24px; } }
+  .wrap{ max-width:1120px; margin:0 auto; padding:0 var(--gutter) calc(var(--nav-h) + env(safe-area-inset-bottom) + 96px); }
 
-  .app-header{
-    display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
-    flex-wrap:wrap; padding-bottom:16px; margin-bottom:24px;
+  /* Slim sticky header: title, income privacy toggle, settings */
+  .topbar{
+    position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:8px;
+    margin:0 calc(-1 * var(--gutter)) 16px; padding:calc(env(safe-area-inset-top) + 8px) var(--gutter) 8px;
+    background:color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
     border-bottom:1px solid var(--border);
   }
-  .eyebrow{ font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
-  .app-title{ font-size:24px; font-weight:600; letter-spacing:-0.02em; color:var(--text); }
-  .app-sub{ font-size:14px; color:var(--text-2); margin-top:4px; }
-  .header-actions{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
-  .header-btns{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  .app-title{ font-size:18px; font-weight:600; letter-spacing:-0.01em; color:var(--text); }
+  .topbar-btns{ display:flex; gap:4px; }
+  .icon-btn{
+    width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    border:none; border-radius:var(--radius); background:transparent; color:var(--text-2); cursor:pointer;
+    transition:background-color var(--ease), color var(--ease);
+  }
+  .icon-btn:hover{ background:var(--surface-2); color:var(--text); }
+
+  /* Bottom nav holds read-only destinations. Adding data is the FAB, not a tab. */
+  .bottom-nav{
+    position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; justify-content:center;
+    background:var(--surface); border-top:1px solid var(--border); padding-bottom:env(safe-area-inset-bottom);
+  }
+  .bottom-nav-inner{ display:flex; width:100%; max-width:560px; }
+  .nav-btn{
+    flex:1; min-height:var(--nav-h); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    border:none; background:transparent; color:var(--text-3); font-size:12px; font-weight:500; cursor:pointer;
+    transition:color var(--ease);
+  }
+  .nav-btn.active{ color:var(--text); font-weight:600; }
+  .fab{
+    position:fixed; z-index:31; right:max(var(--gutter), calc((100vw - 1120px) / 2 + var(--gutter)));
+    bottom:calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
+    width:56px; height:56px; border-radius:16px; border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--accent); color:var(--on-accent); box-shadow:0 4px 16px rgba(0,0,0,.5);
+    transition:transform 200ms ease, opacity 200ms ease;
+  }
+  .fab.hidden{ transform:translateY(24px); opacity:0; pointer-events:none; }
+
+  /* Bottom sheet for actions: add data, PDF review, settings */
+  .sheet-backdrop{ position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.6); display:flex; align-items:flex-end; justify-content:center; }
+  .sheet{
+    width:100%; max-width:640px; max-height:90vh; max-height:90dvh; overflow-y:auto; overscroll-behavior:contain;
+    background:var(--surface); border:1px solid var(--border); border-bottom:none; border-radius:16px 16px 0 0;
+    padding:0 var(--gutter) calc(24px + env(safe-area-inset-bottom));
+  }
+  .sheet.enter{ animation:sheet-in 200ms ease; }
+  @keyframes sheet-in{ from{ transform:translateY(32px); opacity:0; } }
+  .sheet-head{ position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 0; margin-bottom:8px; background:var(--surface); border-bottom:1px solid var(--border); }
+  .sheet-head h2{ font-size:16px; }
+  .sheet .card{ background:none; border:none; padding:0; margin:0 0 16px; }
+  .sheet .card > .card-title:first-child{ display:none; }
+  .action-row{
+    display:block; width:100%; text-align:left; padding:12px 16px; margin-bottom:8px; cursor:pointer;
+    border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2); color:var(--text);
+    font-size:15px; font-weight:600; transition:border-color var(--ease);
+  }
+  .action-row:hover{ border-color:var(--border-strong); }
+  .action-row span{ display:block; font-size:13px; font-weight:400; color:var(--text-2); margin-top:2px; }
+  .settings-meta{ font-size:14px; color:var(--text-2); margin:0 0 16px; line-height:1.5; }
+
+  /* Period presets */
+  .chips{ display:flex; gap:8px; align-items:center; overflow-x:auto; scrollbar-width:none; margin-bottom:8px; }
+  .chips::-webkit-scrollbar{ display:none; }
+  .chip{
+    height:32px; padding:0 14px; flex-shrink:0; border-radius:var(--radius-full); border:1px solid var(--border);
+    background:transparent; color:var(--text-2); font-size:13px; font-weight:500; cursor:pointer; white-space:nowrap;
+  }
+  .chip.on{ background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
+  .period-range{ font-size:13px; color:var(--text-2); margin-bottom:16px; }
+
+  .card.nudge{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-color:var(--border-strong); background:var(--surface-2); }
+  .card.nudge p{ margin:0; font-size:14px; color:var(--text-2); line-height:1.5; flex:1 1 200px; }
+  .card.nudge strong{ color:var(--text); }
+
+  /* Transactions tab */
+  .tx-search{ width:100%; margin-bottom:8px; }
+  .tx-summary{ font-size:13px; color:var(--text-2); margin-bottom:8px; }
+  .tx-day{ font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; padding:16px 0 4px; border-bottom:1px solid var(--border); }
+  .tx-row{ display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .tx-main{ flex:1; min-width:0; }
+  .tx-desc{ font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tx-meta{ font-size:12px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tx-amt{ font-size:14px; font-weight:500; white-space:nowrap; flex-shrink:0; }
+  .tx-amt.in{ color:var(--success); }
 
   .btn{
     display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:500; line-height:1;
@@ -85,7 +164,6 @@
   .btn:disabled{ opacity:.4; cursor:default; }
   .btn.small{ padding:0 12px; min-width:40px; }
 
-  .note{ font-size:12px; color:var(--text-2); text-align:right; max-width:340px; line-height:1.5; }
   .banner{
     display:flex; gap:12px; align-items:flex-start; padding:12px 16px; border-radius:var(--radius);
     font-size:14px; line-height:1.5; margin-bottom:16px; border:1px solid var(--border-strong);
@@ -107,17 +185,18 @@
   }
   .section-label{ font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; margin:24px 0 12px; }
 
-  .metrics{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
+  .metrics{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; margin-bottom:24px; }
+  @media (min-width:900px){ .metrics{ grid-template-columns:repeat(4, minmax(0,1fr)); } }
   .metric{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
   .metric.ok .metric-sub{ color:var(--success); }
   .metric.warn .metric-sub{ color:var(--danger); }
   .metric-label{ font-size:12px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; font-weight:600; margin-bottom:4px; }
-  .metric-value{ font-family:var(--font-mono); font-size:24px; font-weight:600; letter-spacing:-.02em; line-height:1.25; }
+  .metric-value{ font-size:22px; font-weight:600; letter-spacing:-.02em; line-height:1.25; }
   .metric-sub{ font-size:12px; color:var(--text-2); margin-top:4px; }
 
   .toggle-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
   .toggle-row .total{ font-size:14px; color:var(--text-2); margin-left:4px; }
-  .toggle-row .total strong{ color:var(--text); font-family:var(--font-mono); }
+  .toggle-row .total strong{ color:var(--text); }
 
   .legend{ display:flex; flex-wrap:wrap; gap:12px 16px; margin-bottom:12px; font-size:12px; color:var(--text-2); }
   .legend span.sw{ width:12px; height:12px; border-radius:4px; display:inline-block; margin-right:8px; flex-shrink:0; border:1px solid var(--border-strong); }
@@ -129,7 +208,7 @@
   .month-row:last-child{ border-bottom:none; }
   .month-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; gap:8px; }
   .month-label{ font-size:14px; font-weight:600; }
-  .month-total{ font-size:14px; font-family:var(--font-mono); color:var(--text-2); }
+  .month-total{ font-size:14px; color:var(--text-2); }
   .stacked-bar{ display:flex; height:16px; border-radius:var(--radius-sm); overflow:hidden; background:var(--surface-2); }
   .stacked-bar .seg{ height:100%; min-width:2px; }
   .stacked-bar.empty{ background:var(--surface-2); }
@@ -138,13 +217,13 @@
   .row2:last-child{ border-bottom:none; }
   .row2-top{ display:flex; align-items:center; gap:12px; }
   .row2-name{ flex:1; min-width:0; font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .row2-amt{ font-size:16px; font-weight:600; font-family:var(--font-mono); white-space:nowrap; flex-shrink:0; }
+  .row2-amt{ font-size:16px; font-weight:600; white-space:nowrap; flex-shrink:0; }
   .row2-amt small{ font-size:12px; font-weight:400; color:var(--text-2); }
   .row2-bottom{ display:flex; align-items:center; gap:12px; margin-top:8px; }
   .row2-bar{ flex:1; height:8px; background:var(--surface-2); border-radius:var(--radius-sm); overflow:hidden; min-width:24px; }
   .row2-bar-fill{ height:100%; border-radius:var(--radius-sm); }
-  .row2-total{ font-size:12px; color:var(--text-2); font-family:var(--font-mono); white-space:nowrap; flex-shrink:0; }
-  .row2-delta{ font-size:12px; font-weight:500; white-space:nowrap; flex-shrink:0; font-family:var(--font-mono); }
+  .row2-total{ font-size:12px; color:var(--text-2); white-space:nowrap; flex-shrink:0; }
+  .row2-delta{ font-size:12px; font-weight:500; white-space:nowrap; flex-shrink:0; }
   .row2-delta.up{ color:var(--danger); } .row2-delta.down{ color:var(--success); } .row2-delta.flat{ color:var(--text-2); }
   .tag{ font-size:12px; margin-left:8px; padding:0 8px; border-radius:var(--radius-full); border:1px solid var(--border-strong); color:var(--text-2); font-weight:500; }
   .clickable{ cursor:pointer; margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:var(--radius-sm); transition:background-color var(--ease); }
@@ -157,14 +236,14 @@
   .items{ margin-top:8px; padding:12px; background:var(--surface-2); border-radius:var(--radius); }
   .item-row{ display:flex; align-items:baseline; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; }
   .item-row:last-child{ border-bottom:none; }
-  .item-date{ color:var(--text-2); font-size:12px; white-space:nowrap; font-family:var(--font-mono); }
+  .item-date{ color:var(--text-2); font-size:12px; white-space:nowrap; }
   .item-desc{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .item-amt{ font-family:var(--font-mono); font-weight:500; white-space:nowrap; }
+  .item-amt{ font-weight:500; white-space:nowrap; }
   .guess{ color:var(--text-2); }
 
   .period-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
   .period-bar label{ font-size:12px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
-  select, input[type=text], input[type=number], input[type=password], textarea{
+  select, input[type=text], input[type=search], input[type=number], input[type=password], textarea{
     font-family:inherit; font-size:14px; color:var(--text); background:var(--surface-2);
     border:1px solid var(--border); border-radius:var(--radius); padding:0 12px; height:40px;
     transition:border-color var(--ease);
@@ -172,16 +251,6 @@
   textarea{ height:auto; padding:12px; }
   select:hover, input:hover, textarea:hover{ border-color:var(--border-strong); }
   input::placeholder, textarea::placeholder{ color:var(--text-3); }
-
-  .tabs{ display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--border); margin-bottom:24px; align-items:center; }
-  .tab-btn{
-    height:40px; padding:0 16px; font-size:14px; cursor:pointer; border:none; background:transparent;
-    color:var(--text-2); border-bottom:2px solid transparent; margin-bottom:-1px; font-weight:500;
-    transition:color var(--ease), border-color var(--ease);
-  }
-  .tab-btn:hover{ color:var(--text); }
-  .tab-btn.active{ color:var(--text); border-bottom-color:var(--accent); font-weight:600; }
-  .tabs .spacer{ margin-left:auto; }
 
   .empty-state{ text-align:center; padding:48px 16px; }
   .empty-state h2{ font-size:20px; margin-bottom:8px; }
@@ -214,7 +283,7 @@
   .field label{ font-size:14px; color:var(--text-2); }
   .field input{ width:100%; }
 
-  table.ledger{ width:100%; border-collapse:collapse; font-size:12px; font-family:var(--font-mono); }
+  table.ledger{ width:100%; border-collapse:collapse; font-size:12px; }
   table.ledger th{ text-align:left; padding:8px 12px; color:var(--text-2); font-weight:600; text-transform:uppercase; letter-spacing:.04em; font-size:12px; border-bottom:1px solid var(--border); white-space:nowrap; position:sticky; top:0; background:var(--surface-2); }
   table.ledger td{ padding:8px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
   table.ledger th.r, table.ledger td.r{ text-align:right; }
@@ -230,17 +299,9 @@
   .card.promo strong{ color:var(--text); }
   .card.promo .btn-row{ margin-top:0; }
 
-  .toast{ position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--accent); color:var(--on-accent); padding:12px 16px; border-radius:var(--radius); font-size:14px; font-weight:500; z-index:50; }
+  .toast{ position:fixed; bottom:calc(var(--nav-h) + env(safe-area-inset-bottom) + 88px); left:50%; transform:translateX(-50%); background:var(--accent); color:var(--on-accent); padding:12px 16px; border-radius:var(--radius); font-size:14px; font-weight:500; z-index:50; }
 
-  footer.site-footer{ margin-top:48px; padding-top:24px; border-top:1px solid var(--border); font-size:12px; color:var(--text-2); text-align:center; }
-  footer.site-footer a{ color:var(--text); text-decoration:underline; text-underline-offset:2px; }
-
-  @media (max-width:480px){
-    .header-actions{ align-items:stretch; width:100%; }
-    .header-btns{ justify-content:stretch; }
-    .header-btns .btn{ flex:1; }
-    .note{ text-align:left; max-width:none; }
-  }
+  .settings-meta a{ color:var(--text); text-decoration:underline; text-underline-offset:2px; }
 </style>
 </head>
 <body>
@@ -563,7 +624,8 @@ let appData = { months: [], fixedCommitments: {} };
 let ui = {
   tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true,
   bucketOverview: "opex", bucketDeep: "opex", selectedCat: null,
-  showPaste: false, showDebug: false, openMonths: {}, syncError: null, lastSynced: null,
+  sheet: null, // null | "add" | "paste" | "month" | "settings"
+  customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null,
   storage: "connecting", // "connecting" | "synced" | "local"
 };
 function resetPeriod() {
@@ -675,38 +737,86 @@ function trendCell(values, max) {
 }
 
 /* ============================== render: shell ============================== */
+// The sheet keeps its scroll position across re-renders (PDF progress,
+// toggling rows), and only animates in when it first opens.
+let lastSheetKey = null;
 function render() {
   const root = document.getElementById("app");
-  root.innerHTML = renderHeader() + renderBody();
+  const oldSheet = root.querySelector(".sheet");
+  const sheetScroll = oldSheet ? oldSheet.scrollTop : 0;
+  const sheet = renderSheet();
+  root.innerHTML = renderHeader() + renderBody() + renderNav() + sheet.html;
+  const el = root.querySelector(".sheet");
+  if (el) { if (sheet.key === lastSheetKey) el.scrollTop = sheetScroll; else el.classList.add("enter"); }
+  lastSheetKey = sheet.key;
+  document.body.classList.toggle("sheet-open", !!sheet.key);
   wireOnce();
 }
 
+const ICON = (paths, size) => `<svg width="${size || 20}" height="${size || 20}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const ICONS = {
+  overview: '<path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>',
+  detail: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+  txns: '<path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+};
+const WARN_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`;
 function renderHeader() {
   const months = appData.months;
-  const range = months.length ? `${months[0].month} – ${months[months.length - 1].month}` : "no data yet";
-  const statusText = ui.storage === "synced" ? "synced across your devices" : ui.storage === "local" ? "saved in this browser only" : "connecting…";
   return `
-  <div class="app-header">
-    <div>
-      <div class="eyebrow">Duit Bijak</div>
-      <h1 class="app-title">Finance Ledger</h1>
-      <div class="app-sub">UOB · POSB · DBS cards &middot; ${esc(range)} &middot; ${esc(statusText)}</div>
+  <header class="topbar">
+    <h1 class="app-title">Duit Bijak</h1>
+    <div class="topbar-btns">
+      <button class="icon-btn" data-action="toggle-income" aria-pressed="${!ui.hideIncome}" aria-label="${ui.hideIncome ? "Show income" : "Hide income"}" title="${ui.hideIncome ? "Show income" : "Hide income"}">${ICON(ui.hideIncome ? ICONS.eyeOff : ICONS.eye)}</button>
+      <button class="icon-btn" data-action="open-settings" aria-label="Settings" title="Settings">${ICON(ICONS.settings)}</button>
     </div>
-    <div class="header-actions">
-      <div class="header-btns">
-        <button class="btn ${ui.showPaste ? "on" : ""}" data-action="toggle-paste">Add data</button>
-        <button class="btn ${ui.hideIncome ? "" : "on"}" data-action="toggle-income" aria-pressed="${!ui.hideIncome}">${ui.hideIncome ? "Show income" : "Hide income"}</button>
-        <button class="btn ${ui.showSettings ? "on" : ""}" data-action="toggle-settings" aria-expanded="${!!ui.showSettings}">Settings</button>
-      </div>
-      ${ui.lastSynced ? `<span class="note">Updated ${esc(ui.lastSynced)}</span>` : ""}
-    </div>
-  </div>
-  ${ui.storage === "local" && !months.length ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>This data lives only in this browser's local storage — nothing is uploaded anywhere unless you choose to read a statement with Gemini. Each visitor (and each device) keeps their own separate ledger; paste your own statement data below to get started.</span></div>` : ""}
-  ${ui.syncError ? `<div class="banner error"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>${esc(ui.syncError)}</span></div>` : ""}
+  </header>
+  ${ui.storage === "local" && !months.length ? `<div class="banner warn">${WARN_ICON}<span>This data lives only in this browser's local storage — nothing is uploaded anywhere unless you choose to read a statement with Gemini. Each visitor (and each device) keeps their own separate ledger; tap + to add your own statements.</span></div>` : ""}
+  ${ui.syncError ? `<div class="banner error">${WARN_ICON}<span>${esc(ui.syncError)}</span></div>` : ""}
   ${renderAppPrompts()}
-  ${ui.showSettings ? renderSettings() : ""}
-  ${ui.pdfImport ? renderPdfReview() : ui.showPaste ? renderPastePanel() : ""}
   `;
+}
+
+const TABS = [["overview", "Overview", ICONS.overview], ["deepdive", "Detail", ICONS.detail], ["txns", "Transactions", ICONS.txns]];
+function renderNav() {
+  const nav = appData.months.length ? `
+  <nav class="bottom-nav" aria-label="Sections"><div class="bottom-nav-inner">
+    ${TABS.map(([key, label, icon]) => `<button class="nav-btn ${ui.tab === key ? "active" : ""}" data-action="set-tab" data-tab="${key}" ${ui.tab === key ? 'aria-current="page"' : ""}>${ICON(icon, 22)}<span>${label}</span></button>`).join("")}
+  </div></nav>` : "";
+  return `${nav}<button class="fab ${fabHidden ? "hidden" : ""}" data-action="open-add" aria-label="Add data" title="Add data">${ICON(ICONS.plus, 24)}</button>`;
+}
+
+// Which sheet shows. Settings sits over a PDF review, so a key can be added
+// mid-import and closing Settings returns to the review.
+function renderSheet() {
+  let key = null, title = "", body = "", closable = true;
+  if (ui.sheet === "settings") { key = "settings"; title = "Settings"; body = renderSettings(); }
+  else if (ui.pdfImport) { key = "pdf"; title = "Review PDF import"; body = renderPdfReview(); closable = false; }
+  else if (ui.sheet === "add") { key = "add"; title = "Add data"; body = renderAddMenu(); }
+  else if (ui.sheet === "paste") { key = "paste"; title = "Paste or upload a table"; body = renderPastePanel(); }
+  else if (ui.sheet === "month") { key = "month"; title = "Enter a month by hand"; body = renderAddMonth(); }
+  if (!key) return { key: null, html: "" };
+  const error = ui.syncError ? `<div class="banner error">${WARN_ICON}<span>${esc(ui.syncError)}</span></div>` : "";
+  return { key, html: `
+  <div class="sheet-backdrop" ${closable ? 'data-action="close-sheet"' : ""}>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="sheet-head"><h2>${esc(title)}</h2>${closable ? `<button class="icon-btn" data-action="close-sheet" aria-label="Close">${ICON(ICONS.close)}</button>` : ""}</div>
+      ${error}${body}
+    </div>
+  </div>` };
+}
+function renderAddMenu() {
+  return `
+  <button class="action-row" data-action="trigger-pdf-import">Import statement PDFs<span>UOB account, UOB cards, POSB, DBS cards. Read in this browser; you review rows before saving.</span></button>
+  <input type="file" accept="application/pdf,.pdf" multiple id="pdf-file-input" style="display:none">
+  <button class="action-row" data-action="trigger-csv-import">Import CSV file<span>Columns: Statement File, Bank, Date, Description, Amount, Type, Category.</span></button>
+  <input type="file" accept=".csv,.tsv,text/csv" id="csv-file-input" style="display:none">
+  <button class="action-row" data-action="open-sheet" data-sheet="paste">Paste a table<span>Copied straight out of a spreadsheet.</span></button>
+  <button class="action-row" data-action="open-sheet" data-sheet="month">Enter a month by hand<span>Totals only, for a month without statements.</span></button>`;
 }
 
 const CHECK_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
@@ -798,8 +908,19 @@ function renderSettings() {
     ${test ? `<p class="paste-help" role="status" style="margin:8px 0 0;">${test.busy ? "Testing…" : `${test.ok ? "Works" : "Failed"}: ${esc(test.message)}`}</p>` : ""}
     <p class="paste-help" style="margin:12px 0 0;">The setup link carries your key, so treat it like a password. Opening it on another device saves the key there and removes it from the address bar. Anyone holding it can spend your key.</p>
     <p class="paste-help" style="margin:8px 0 0;">${DuitGemini.hasConsent() ? "You've agreed to send statement text to Google on this device." : "You'll be asked before any statement text is first sent to Google."}</p>
-    <div class="btn-row"><button class="btn ghost" data-action="toggle-settings">Close</button></div>
-  </div>`;
+  </div>
+  ${renderDataSettings()}`;
+}
+// What used to sit in the header subtitle and the page footer.
+function renderDataSettings() {
+  const months = appData.months;
+  const range = months.length ? `${months[0].month} – ${months[months.length - 1].month}` : "no data yet";
+  const statusText = ui.storage === "synced" ? "Synced across your devices" : ui.storage === "local" ? "Saved in this browser only" : "Connecting…";
+  return `
+  <div class="section-label">Your data</div>
+  <p class="settings-meta">${esc(statusText)} &middot; ${months.length} month${months.length !== 1 ? "s" : ""} (${esc(range)})${ui.lastSynced ? ` &middot; updated ${esc(ui.lastSynced)}` : ""}<br>Reads UOB, POSB and DBS card statements.</p>
+  <div class="btn-row" style="margin-top:0;"><button class="btn danger" data-action="clear-data">${ui.confirmClear ? "Really clear? Tap again" : "Clear all data"}</button></div>
+  <p class="settings-meta" style="margin-top:24px;"><a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> is a local-only finance ledger. Nothing you enter leaves your browser, unless you choose to read a statement with Gemini.</p>`;
 }
 
 // Opening "#setup?gemini=…" saves the key, then strips it from the address bar.
@@ -877,55 +998,76 @@ function renderAppPrompts() {
 function renderPastePanel() {
   return `
   <div class="card">
-    <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Import data</p>
-    <p class="paste-help"><strong>Statement PDFs</strong> (UOB account, UOB cards, POSB, DBS cards): pick one or more. They're read in this browser, and you review the rows before anything is saved. Other SGD statements can be read by Gemini with your own key, but only if you tap to send them.</p>
-    <div class="btn-row" style="margin-top:0;margin-bottom:16px;">
-      <button class="btn primary" data-action="trigger-pdf-import">Import statement PDFs</button>
-      <input type="file" accept="application/pdf,.pdf" multiple id="pdf-file-input" style="display:none">
-    </div>
-    <p class="paste-help">Or import a table with columns <strong>Statement File, Bank, Date, Description, Amount, Type, Category</strong>: upload a CSV file, or paste it (tab- or comma-separated, e.g. copied straight out of a spreadsheet). Existing months in the table will be replaced; other months already stored here are kept.</p>
-    <div class="btn-row" style="margin-top:0;margin-bottom:12px;">
-      <button class="btn" data-action="trigger-csv-import">Import CSV file</button>
-      <input type="file" accept=".csv,.tsv,text/csv" id="csv-file-input" style="display:none">
-    </div>
-    <p class="paste-help" style="margin-top:0;">— or paste below —</p>
+    <p class="paste-help">Paste a table with columns <strong>Statement File, Bank, Date, Description, Amount, Type, Category</strong>, tab- or comma-separated. Months in the table are replaced; other months already stored here are kept.</p>
     <textarea class="paste-area" id="paste-input" placeholder="Statement File&#9;Bank&#9;Date&#9;Description&#9;Amount&#9;Type&#9;Category&#10;…">${esc(ui.pasteDraft || "")}</textarea>
     <div class="btn-row">
       <button class="btn primary" data-action="process-paste">Process pasted data</button>
-      <button class="btn ghost" data-action="cancel-paste">Cancel</button>
+      <button class="btn ghost" data-action="open-sheet" data-sheet="add">Back</button>
     </div>
   </div>`;
 }
 
+function periodMonths() {
+  const months = appData.months;
+  const from = Math.min(ui.fromIdx, months.length - 1);
+  const to = Math.min(ui.toIdx, months.length - 1);
+  return { from, to, filtered: months.slice(from, to + 1) };
+}
+const PRESETS = [["3m", "3M"], ["6m", "6M"], ["ytd", "YTD"], ["all", "All"]];
+function presetRange(key) {
+  const months = appData.months, last = months.length - 1;
+  if (key === "3m") return [Math.max(0, last - 2), last];
+  if (key === "6m") return [Math.max(0, last - 5), last];
+  if (key === "ytd") { const year = months[last].month.split(" ")[1]; return [months.findIndex(m => m.month.split(" ")[1] === year), last]; }
+  return [0, last];
+}
+function renderPeriod(from, to, count) {
+  const months = appData.months;
+  const preset = ui.customPeriod ? null : (PRESETS.find(([k]) => { const [f, t] = presetRange(k); return f === from && t === to; }) || [null])[0];
+  const options = sel => months.map((m, i) => `<option value="${i}" ${i === sel ? "selected" : ""}>${esc(m.month)}</option>`).join("");
+  return `
+  <div class="chips" role="group" aria-label="Period">
+    ${PRESETS.map(([k, label]) => `<button class="chip ${preset === k ? "on" : ""}" data-action="set-preset" data-preset="${k}" aria-pressed="${preset === k}">${label}</button>`).join("")}
+    <button class="chip ${preset ? "" : "on"}" data-action="custom-period" aria-pressed="${!preset}">Custom</button>
+  </div>
+  ${preset ? "" : `<div class="period-bar">
+    <select id="from-select" aria-label="From">${options(from)}</select>
+    <span style="font-size:14px;color:var(--text-2)">to</span>
+    <select id="to-select" aria-label="To">${options(to)}</select>
+  </div>`}
+  <div class="period-range">${esc(months[from].month)} – ${esc(months[to].month)} &middot; ${count} month${count !== 1 ? "s" : ""}</div>`;
+}
+
+// A month whose card statements are missing reads as a big drop in spend.
+// Spot it from the card accounts seen in the three months before it.
+function cardAccounts(m) { return new Set((m.transactions || []).map(t => t.account).filter(a => CARD_TYPES.has(a))); }
+function missingCards(m) {
+  if (!m.cardSpendAvailable || !(m.transactions || []).length) return [];
+  const i = appData.months.findIndex(x => x.month === m.month);
+  const seen = new Set();
+  appData.months.slice(Math.max(0, i - 3), Math.max(0, i)).forEach(p => cardAccounts(p).forEach(a => seen.add(a)));
+  const have = cardAccounts(m);
+  return [...seen].filter(a => !have.has(a));
+}
+function renderNudge() {
+  const latest = appData.months[appData.months.length - 1];
+  const missing = missingCards(latest);
+  let msg = null;
+  if (!latest.cardSpendAvailable) msg = `<strong>${esc(latest.month)}</strong> has no card statement yet. Op-Ex figures skip it.`;
+  else if (missing.length) msg = `<strong>${esc(latest.month)}</strong> has no ${esc(missing.join(" or "))} statement yet, so its Op-Ex reads low.`;
+  if (!msg) return "";
+  return `<div class="card nudge"><p>${msg}</p><button class="btn small primary" data-action="open-add">Import</button></div>`;
+}
+
 function renderBody() {
   if (!appData.months.length) return renderEmptyState();
-  const months = appData.months;
-  const safeFrom = Math.min(ui.fromIdx, months.length - 1);
-  const safeTo = Math.min(ui.toIdx, months.length - 1);
-  const filtered = months.slice(safeFrom, safeTo + 1);
-  const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
-
-  const monthOptions = months.map((m, i) => `<option value="${i}" ${i === safeFrom ? "selected" : ""}>${esc(m.month)}</option>`).join("");
-  const monthOptionsTo = months.map((m, i) => `<option value="${i}" ${i === safeTo ? "selected" : ""}>${esc(m.month)}</option>`).join("");
-
+  const { from, to, filtered } = periodMonths();
   return `
-  <div class="period-bar">
-    <label>Period</label>
-    <select id="from-select" data-action="set-from">${monthOptions}</select>
-    <span style="font-size:14px;color:var(--text-2)">to</span>
-    <select id="to-select" data-action="set-to">${monthOptionsTo}</select>
-    <span style="font-size:14px;color:var(--text-2)">(${filtered.length} month${filtered.length !== 1 ? "s" : ""})</span>
-  </div>
-  ${partial.length ? `<div class="banner warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span><strong>${esc(partial.join(", "))}:</strong> no card statement for this month yet. Card-dependent figures show "—".</span></div>` : ""}
-  <div class="tabs">
-    <button class="tab-btn ${ui.tab === "overview" ? "active" : ""}" data-action="set-tab" data-tab="overview">Overview</button>
-    <button class="tab-btn ${ui.tab === "deepdive" ? "active" : ""}" data-action="set-tab" data-tab="deepdive">Deep Dive</button>
-    <button class="tab-btn spacer ${ui.tab === "addmonth" ? "active" : ""}" data-action="set-tab" data-tab="addmonth">+ Add Month</button>
-  </div>
+  ${renderPeriod(from, to, filtered.length)}
+  ${renderNudge()}
   ${ui.tab === "overview" ? renderOverview(filtered) : ""}
   ${ui.tab === "deepdive" ? renderDeepDive(filtered) : ""}
-  ${ui.tab === "addmonth" ? renderAddMonth() : ""}
-  ${renderDebugFooter(months)}
+  ${ui.tab === "txns" ? renderTxns() : ""}
   `;
 }
 
@@ -935,11 +1077,9 @@ function renderEmptyState() {
     <h2>No data yet</h2>
     <p>Import your statement PDFs, or paste a ledger (Statement File, Bank, Date, Description, Amount, Type, Category columns), to build the dashboard. Everything you add stays in this browser only.</p>
     <div class="btn-row" style="justify-content:center;">
-      <button class="btn primary" data-action="toggle-paste">Add data</button>
+      <button class="btn primary" data-action="open-add">Add data</button>
     </div>
-  </div>
-  ${ui.tab === "addmonth" ? renderAddMonth() : ""}
-  `;
+  </div>`;
 }
 
 /* ============================== overview tab ============================== */
@@ -958,7 +1098,12 @@ function renderOverview(filtered) {
   const prev = filtered.length > 1 ? filtered[filtered.length - 2] : null;
   const avgOpex = available.length ? Math.round(totalOpex / available.length) : null;
   const netAvgOpex = available.length ? Math.round(netTotalOpex / available.length) : null;
-  const delta = (prev && prev.cardSpendAvailable && latest.cardSpendAvailable) ? pct(opexAmount(latest), opexAmount(prev)) : null;
+  const latestMissing = missingCards(latest);
+  const delta = (prev && prev.cardSpendAvailable && latest.cardSpendAvailable && !latestMissing.length) ? pct(opexAmount(latest), opexAmount(prev)) : null;
+  const tone = delta > 15 ? "warn" : delta < -15 ? "ok" : "";
+  const latestSub = !latest.cardSpendAvailable ? "no card stmt yet"
+    : latestMissing.length ? `partial: no ${latestMissing.join(", ")} yet`
+    : delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—";
   const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
 
   const totals = {}; const tags = {};
@@ -1031,18 +1176,15 @@ function renderOverview(filtered) {
     </div>` : "";
 
   return `
-  <div class="section-label">Overview &middot; ${esc(filtered[0].month)} – ${esc(latest.month)}</div>
-  <div style="font-size:14px;color:var(--text-2);margin-bottom:16px;">
-    ${!ui.hideIncome ? `Total in ${esc(fmt(totalIn))} &middot; ` : ""}Total out ${esc(fmt(totalOut))}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}
-  </div>
   <div class="metrics">
-    <div class="metric ${!latest.cardSpendAvailable ? "" : delta > 15 ? "warn" : delta < -15 ? "ok" : ""}">
+    <div class="metric ${tone}">
       <div class="metric-label">${esc(latest.month)} Op-Ex</div>
-      <div class="metric-value ${!latest.cardSpendAvailable ? "warn" : delta > 15 ? "warn" : delta < -15 ? "ok" : ""}">${latest.cardSpendAvailable ? esc(fmt(opexAmount(latest))) : "Pending"}</div>
-      <div class="metric-sub">${latest.cardSpendAvailable ? (delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—") : "no card stmt yet"}</div>
+      <div class="metric-value">${latest.cardSpendAvailable ? esc(fmt(opexAmount(latest))) : "Pending"}</div>
+      <div class="metric-sub">${esc(latestSub)}</div>
     </div>
     <div class="metric"><div class="metric-label">Avg Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${available.length} month${available.length !== 1 ? "s" : ""} confirmed</div></div>
     <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">after reimbursements</div></div>
+    <div class="metric"><div class="metric-label">Total out</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
   </div>
   <div class="card">
     <p class="card-title">Monthly spend pattern</p>
@@ -1111,7 +1253,7 @@ function renderDeepDive(filtered) {
 
   return `
   <div class="card">
-    <p class="card-title">Category breakdown${bucket === "opex" ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:14px;">(click a row for line items)</span>' : ""}</p>
+    <p class="card-title">Category breakdown${bucket === "opex" ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:14px;">(tap a row for line items)</span>' : ""}</p>
     ${bucketToggle("bucketDeep", bucket)}
     ${cats.length === 0 ? `<div style="font-size:14px;color:var(--text-2);padding:8px 0;">No data for this view.</div>` : catRows}
   </div>
@@ -1185,33 +1327,40 @@ function renderAddMonth() {
   </div>`;
 }
 
-/* ============================== debug ledger ============================== */
-function renderDebugFooter(months) {
-  return `
-  <div style="margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-    <button class="btn small danger" data-action="clear-data">${ui.confirmClear ? "Really clear? tap again" : "Clear all data"}</button>
-    <button class="btn small ghost" data-action="toggle-debug">${ui.showDebug ? "hide ledger" : "[ledger]"}</button>
-  </div>
-  ${ui.showDebug ? renderLedger(months) : ""}
-  `;
+/* ============================== transactions tab ============================== */
+// "12 Sep 2026" -> 20260812 for sorting; Date parsing of this format varies by browser.
+function dateKey(d) {
+  const [day, mon, year] = String(d || "").trim().split(/\s+/);
+  return Number(year) * 10000 + MONTH_ORDER.indexOf(mon) * 100 + Number(day) || 0;
 }
-function renderLedger(months) {
-  const blocks = months.map(m => {
-    const open = !!ui.openMonths[m.month];
-    const txs = m.transactions || [];
-    return `<div style="margin-bottom:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
-      <button class="month-toggle" data-action="toggle-month" data-month="${esc(m.month)}">
-        <span>${esc(m.month)}</span>
-        <span class="r">${open ? "▲ collapse" : `▼ out:${esc(fmt(m.totalOut))} · txns:${txs.length}`}</span>
-      </button>
-      ${open ? `<div class="scroll-x ledger-wrap"><table class="ledger">
-        <thead><tr><th>Date</th><th>Account</th><th>Description</th><th class="r">Withdrawal</th><th class="r">Deposit</th></tr></thead>
-        <tbody>${txs.length ? txs.map(tx => `<tr><td>${esc(tx.date)}</td><td>${esc(tx.account)}</td><td>${esc(tx.description)}</td>
-          <td class="r">${tx.withdrawal != null ? esc(fmt(tx.withdrawal)) : ""}</td><td class="r">${tx.deposit != null ? esc(fmt(tx.deposit)) : ""}</td></tr>`).join("") : `<tr><td colspan="5" style="color:var(--text-2);">No transactions.</td></tr>`}</tbody>
-      </table></div>` : ""}
+const TX_PAGE = 100;
+function renderTxns() {
+  return `
+  <input type="search" class="tx-search" id="tx-search" placeholder="Search description, category, account" value="${esc(ui.txQuery || "")}" autocomplete="off" aria-label="Search transactions">
+  <div id="tx-list">${renderTxList()}</div>`;
+}
+function renderTxList() {
+  const q = (ui.txQuery || "").trim().toLowerCase();
+  const all = periodMonths().filtered.flatMap(m => (m.transactions || []).map(tx => ({ ...tx, cat: resolveCategory(tx) })))
+    .filter(tx => !(ui.hideIncome && tx.deposit != null && SALARY_MATCH.test(tx.description)))
+    .filter(tx => !q || [tx.description, tx.cat, tx.account].some(v => String(v || "").toLowerCase().includes(q)))
+    .sort((a, b) => dateKey(b.date) - dateKey(a.date));
+  if (!all.length) return `<div style="font-size:14px;color:var(--text-2);padding:16px 0;">${q ? "No transactions match." : "No line items in this period. Months entered by hand have totals only."}</div>`;
+  const out = all.reduce((s, t) => s + (t.withdrawal || 0), 0), inn = all.reduce((s, t) => s + (t.deposit || 0), 0);
+  const shown = all.slice(0, ui.txLimit || TX_PAGE);
+  let day = null;
+  const rows = shown.map(tx => {
+    const head = tx.date !== day ? `<div class="tx-day">${esc(tx.date)}</div>` : "";
+    day = tx.date;
+    const isIn = tx.deposit != null;
+    return `${head}<div class="tx-row">
+      <div class="tx-main"><div class="tx-desc">${esc(tx.description)}</div><div class="tx-meta">${esc(tx.cat)} &middot; ${esc(tx.account)}</div></div>
+      <span class="tx-amt ${isIn ? "in" : ""}">${isIn ? "+" : ""}${esc(fmt(isIn ? tx.deposit : tx.withdrawal))}</span>
     </div>`;
   }).join("");
-  return `<div class="section-label">Transaction ledger — all months</div>${blocks}`;
+  return `<div class="tx-summary">${all.length} transaction${all.length !== 1 ? "s" : ""} &middot; out ${esc(fmt(out))}${ui.hideIncome ? "" : ` &middot; in ${esc(fmt(inn))}`}</div>
+  ${rows}
+  ${all.length > shown.length ? `<div class="btn-row" style="justify-content:center;"><button class="btn" data-action="tx-more">Show ${Math.min(TX_PAGE, all.length - shown.length)} more</button></div>` : ""}`;
 }
 
 /* ============================== install & updates ============================== */
@@ -1252,7 +1401,27 @@ function wireOnce() {
   const root = document.getElementById("app");
   root.addEventListener("click", onClick);
   root.addEventListener("change", onChange);
+  // Search re-renders only the list, so the input keeps focus and the keyboard stays up.
+  root.addEventListener("input", e => {
+    if (e.target.id !== "tx-search") return;
+    ui.txQuery = e.target.value; ui.txLimit = 0;
+    const list = document.getElementById("tx-list");
+    if (list) list.innerHTML = renderTxList();
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && (ui.sheet || ui.pdfImport) && !(ui.pdfImport && ui.sheet !== "settings")) { ui.sheet = null; render(); } });
+  // The FAB hides while scrolling down through content and returns on scroll up.
+  let lastY = window.scrollY;
+  window.addEventListener("scroll", () => {
+    const y = window.scrollY, hide = y > lastY && y > 80;
+    if (Math.abs(y - lastY) < 8) return;
+    lastY = y;
+    if (hide === fabHidden) return;
+    fabHidden = hide;
+    const fab = document.querySelector(".fab");
+    if (fab) fab.classList.toggle("hidden", hide);
+  }, { passive: true });
 }
+let fabHidden = false;
 function onChange(e) {
   const t = e.target;
   if (t.id === "from-select") { ui.fromIdx = Number(t.value); if (ui.fromIdx > ui.toIdx) ui.toIdx = ui.fromIdx; render(); }
@@ -1279,7 +1448,7 @@ function ingestText(text, sourceSuffix, fromPaste) {
   try { parsedMonths = syncFromText(text); }
   catch (err) { ui.syncError = err.message; if (fromPaste) ui.pasteDraft = text; render(); return; }
   persistMonths(parsedMonths).then(() => {
-    ui.showPaste = false; ui.syncError = null; ui.pasteDraft = "";
+    ui.sheet = null; ui.syncError = null; ui.pasteDraft = "";
     if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
     showToast(`Loaded ${parsedMonths.length} month${parsedMonths.length !== 1 ? "s" : ""}${sourceSuffix}.`);
     render();
@@ -1291,9 +1460,20 @@ function onClick(e) {
   const action = btn.getAttribute("data-action");
   if (action !== "clear-data") ui.confirmClear = false;
 
-  if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; render(); }
-  else if (action === "toggle-paste") { ui.showPaste = !ui.showPaste; render(); const ta = document.getElementById("paste-input"); if (ta) ta.focus(); }
-  else if (action === "cancel-paste") { ui.showPaste = false; ui.pasteDraft = ""; ui.syncError = null; render(); }
+  if (action === "close-sheet") {
+    // The backdrop carries this action too; only a tap on the backdrop itself closes.
+    if (btn.classList.contains("sheet-backdrop") && e.target !== btn) return;
+    ui.sheet = null; ui.keyTest = null; render();
+  }
+  else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; ui.txLimit = 0; render(); window.scrollTo(0, 0); }
+  else if (action === "open-add") { ui.sheet = "add"; ui.syncError = null; render(); }
+  else if (action === "open-sheet") {
+    ui.sheet = btn.getAttribute("data-sheet"); render();
+    const ta = document.getElementById("paste-input"); if (ta) ta.focus();
+  }
+  else if (action === "set-preset") { [ui.fromIdx, ui.toIdx] = presetRange(btn.getAttribute("data-preset")); ui.customPeriod = false; ui.txLimit = 0; render(); }
+  else if (action === "custom-period") { ui.customPeriod = true; render(); }
+  else if (action === "tx-more") { ui.txLimit = (ui.txLimit || TX_PAGE) + TX_PAGE; const list = document.getElementById("tx-list"); if (list) list.innerHTML = renderTxList(); }
   else if (action === "apply-update") { location.reload(); }
   else if (action === "install-app") {
     const ev = pwa.installEvent;
@@ -1308,13 +1488,11 @@ function onClick(e) {
   else if (action === "toggle-income") { ui.hideIncome = !ui.hideIncome; render(); }
   else if (action === "set-bucket") { ui[btn.getAttribute("data-key")] = btn.getAttribute("data-value"); ui.selectedCat = null; render(); }
   else if (action === "select-cat") { const c = btn.getAttribute("data-cat"); ui.selectedCat = ui.selectedCat === c ? null : c; render(); }
-  else if (action === "toggle-debug") { ui.showDebug = !ui.showDebug; render(); }
-  else if (action === "toggle-month") { const m = btn.getAttribute("data-month"); ui.openMonths[m] = !ui.openMonths[m]; render(); }
   else if (action === "clear-data") {
     if (ui.confirmClear) {
       const storage = ui.storage;
       clearAllData().then(() => {
-        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", bucketDeep: "opex", selectedCat: null, showPaste: false, showDebug: false, openMonths: {}, syncError: null, lastSynced: null, storage };
+        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", bucketDeep: "opex", selectedCat: null, sheet: null, customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null, storage };
         showToast("Data cleared.");
         render();
       }).catch(err => { ui.syncError = "Couldn't clear data: " + err.message; render(); });
@@ -1350,12 +1528,7 @@ function onClick(e) {
     else if (!DuitGemini.hasConsent()) { f.askConsent = true; render(); return; }
     readWithGemini(f).catch(err => { f.geminiBusy = false; f.geminiError = "Gemini read failed: " + err.message; render(); });
   }
-  else if (action === "toggle-settings") { ui.showSettings = !ui.showSettings; ui.keyTest = null; render(); }
-  else if (action === "open-settings") {
-    ui.showSettings = true; render();
-    const card = document.getElementById("settings-card");
-    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  else if (action === "open-settings") { ui.sheet = "settings"; ui.keyTest = null; render(); }
   else if (action === "save-key") {
     const input = document.getElementById("gemini-key-input");
     const key = input ? input.value.trim() : "";
@@ -1390,7 +1563,7 @@ function onClick(e) {
     if (!rows.length) return;
     btn.disabled = true; btn.textContent = "Importing…";
     persistMonths(planImport(rows).months).then(() => {
-      ui.pdfImport = null; ui.showPaste = false; ui.syncError = null;
+      ui.pdfImport = null; ui.sheet = null; ui.syncError = null;
       if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
       showToast(`Imported ${rows.length} rows from ${fileCount} file${fileCount !== 1 ? "s" : ""}.`);
       render();
@@ -1414,7 +1587,7 @@ function onClick(e) {
     };
     btn.disabled = true; btn.textContent = "Saving…";
     persistMonths([newMonth]).then(() => {
-      ui.tab = "overview";
+      ui.tab = "overview"; ui.sheet = null;
       if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
       showToast(`${month} saved.`);
       render();
@@ -1439,16 +1612,13 @@ function onClick(e) {
 }
 
 /* ============================== init ============================== */
-if (consumeSetupLink()) { ui.showSettings = true; showToast("Gemini key saved from setup link."); }
+if (consumeSetupLink()) { ui.sheet = "settings"; showToast("Gemini key saved from setup link."); }
 render();
 initPersistence();
 watchForUpdates();
 })();
 </script>
 
-<footer class="site-footer">
-  <a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> — a local-only finance ledger. Nothing you enter here leaves your browser, unless you choose to read a statement with Gemini.
-</footer>
 
 </body>
 </html>
