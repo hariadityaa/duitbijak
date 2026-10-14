@@ -48,11 +48,10 @@ function renderOverview(filtered) {
   const inPeriod = new Set(filtered.map(m => m.month));
   const model = oneOffModel();
   const pendingSuggestions = [...model.suggestions.keys()].filter(k => inPeriod.has(k.split("|")[0])).length;
-  // Savings rate: savings over salary for the period. Salary credits are
-  // take-home pay; other credits (refunds, transfers in) would inflate it.
+  // Savings rate: savings over all money in for the period. Savings can be
+  // funded by transfers from other banks, which a salary-only divisor misses.
   const totalSavings = filtered.reduce((s, m) => s + savingsAmount(m), 0);
-  const totalSalary = filtered.reduce((s, m) => s + (m.salaryIn || 0), 0);
-  const savingsRate = totalSalary > 0 ? Math.round(totalSavings / totalSalary * 100) : null;
+  const savingsRate = totalIn > 0 ? Math.round(totalSavings / totalIn * 100) : null;
 
   // Op-Ex per-month figures divide by confirmed months only, so a partial
   // month (a card statement still missing) doesn't pull the averages down.

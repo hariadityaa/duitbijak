@@ -196,7 +196,7 @@ function renderAddMonth() {
 function outSplit(b, savingsRate) {
   const parts = [["Spend", b.spend], ["One-offs", b.oneOffs + b.ruleOneOffs]];
   if (ui.hideIncome) parts.push(["Fixed & saved", b.fixed + b.saved]);
-  else parts.push(["Fixed", b.fixed], ["Saved", b.saved, savingsRate != null && b.saved ? ` (${savingsRate}%)` : ""]);
+  else parts.push(["Fixed", b.fixed], ["Saved", b.saved, savingsRate != null && b.saved ? ` (${savingsRate}% of money in)` : ""]);
   return parts.filter(([, v]) => v).map(([k, v, note]) => `${k} ${fmt(v)}${note || ""}`).join(" · ");
 }
 // From core op-ex to Total out, one step a row.
