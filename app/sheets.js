@@ -191,12 +191,12 @@ function renderAddMonth() {
 }
 
 /* ============================== total out ============================== */
-// Fixed bills are spend and savings aren't, so they always show apart. The
-// savings rate would back out salary, so it shows only with income visible.
+// Invested shows apart from spend, one-offs and fixed bills. The savings
+// rate would back out salary, so it shows only with income visible.
 function outSplit(b, savingsRate) {
   const showRate = !ui.hideIncome && savingsRate != null && b.saved;
-  const parts = [["Spend", b.spend], ["One-offs", b.oneOffs + b.ruleOneOffs], ["Fixed", b.fixed],
-    ["Saved", b.saved, showRate ? ` (${savingsRate}% of money in)` : ""]];
+  const parts = [["Spend", b.spend], ["One-offs & fixed", b.oneOffs + b.ruleOneOffs + b.fixed],
+    ["Invested", b.saved, showRate ? ` (${savingsRate}% of money in)` : ""]];
   return parts.filter(([, v]) => v).map(([k, v, note]) => `${k} ${fmt(v)}${note || ""}`).join(" · ");
 }
 // From core op-ex to Total out, one step a row.
