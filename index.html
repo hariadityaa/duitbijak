@@ -167,8 +167,6 @@
   .spend-cat select{ flex:1; min-width:0; }
   .spend-life{ display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text-2); }
   .spend-life input{ width:80px; }
-  .metric.wide{ grid-column:1 / -1; }
-  .metric-value small{ font-size:14px; font-weight:500; color:var(--text-2); }
 
   .btn{
     display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:500; line-height:1;
@@ -206,11 +204,11 @@
   }
   .section-label{ font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; margin:24px 0 12px; }
 
-  .metrics{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; margin-bottom:24px; }
-  @media (min-width:900px){ .metrics{ grid-template-columns:repeat(4, minmax(0,1fr)); } }
+  .metrics{ display:grid; grid-template-columns:minmax(0,1fr); gap:12px; margin-bottom:24px; }
+  @media (min-width:900px){ .metrics{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
   .metric{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
-  .metric.ok .metric-sub{ color:var(--success); }
-  .metric.warn .metric-sub{ color:var(--danger); }
+  .metric-sub .ok{ color:var(--success); }
+  .metric-sub .warn{ color:var(--danger); }
   .metric-label{ font-size:12px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; font-weight:600; margin-bottom:4px; }
   .metric-value{ font-size:22px; font-weight:600; letter-spacing:-.02em; line-height:1.25; }
   .metric-sub{ font-size:12px; color:var(--text-2); margin-top:4px; }
@@ -1646,22 +1644,21 @@ function renderOverview(filtered) {
   const tone = delta > 15 ? "warn" : delta < -15 ? "ok" : "";
   const shownMissing = missingCards(shown);
   const later = filtered.slice(filtered.indexOf(shown) + 1).map(m => m.month.split(" ")[0]);
-  const latestSub = !shown.cardSpendAvailable ? "no card stmt yet"
-    : shownMissing.length ? `partial: no ${shownMissing.map(sourceLabel).join(", ")} yet`
-    : [delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs ${shownPrev.month.split(" ")[0]}` : null, later.length ? `${later.join(", ")} pending` : null].filter(Boolean).join(" · ") || "—";
+  // The hero's sub-line: the latest confirmed month, its change, what's still to come.
+  const latestSub = [`${esc(shortMonth(shown.month))} ${shown.cardSpendAvailable ? esc(fmt(opexAmount(shown))) : "pending"}`,
+    !shown.cardSpendAvailable ? "no card stmt yet"
+    : shownMissing.length ? `partial: no ${esc(shownMissing.map(sourceLabel).join(", "))} yet`
+    : delta != null ? `<span class="${tone}">${delta > 0 ? "+" : ""}${delta}% vs ${esc(shortMonth(shownPrev.month))}</span>` : null,
+    later.length ? `${esc(later.join(", "))} pending` : null].filter(Boolean).join(" &middot; ");
   const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
   const inPeriod = new Set(filtered.map(m => m.month));
   const model = oneOffModel();
-  const periodFlagged = model.flagged.filter(r => inPeriod.has(r.month));
-  const oneOffTotal = periodFlagged.reduce((s, r) => s + r.amount, 0);
-  const oneOffByType = Object.keys(FLAG_GROUPS).map(t => [SPEND_TYPES[t].label, periodFlagged.filter(r => r.type === t).reduce((s, r) => s + r.amount, 0)]).filter(([, v]) => v);
   const pendingSuggestions = [...model.suggestions.keys()].filter(k => inPeriod.has(k.split("|")[0])).length;
   // Savings rate: savings over salary for the period. Salary credits are
   // take-home pay; other credits (refunds, transfers in) would inflate it.
   const totalSavings = filtered.reduce((s, m) => s + savingsAmount(m), 0);
   const totalSalary = filtered.reduce((s, m) => s + (m.salaryIn || 0), 0);
   const savingsRate = totalSalary > 0 ? Math.round(totalSavings / totalSalary * 100) : null;
-  const savingsSub = savingsRate != null ? `${savingsRate}% of salary` : "no salary in period";
 
   // Op-Ex per-month figures divide by confirmed months only, so a partial
   // month (a card statement still missing) doesn't pull the averages down.
@@ -1738,18 +1735,14 @@ function renderOverview(filtered) {
 
   return `
   <div class="metrics">
-    <div class="metric clickable ${tone}" ${drillAttrs("drill-month", { month: shown.month, bucket: "opex" })}>
-      <div class="metric-label">${esc(shown.month)} Core Op-Ex${CHEV}</div>
-      <div class="metric-value">${shown.cardSpendAvailable ? esc(fmt(opexAmount(shown))) : "Pending"}</div>
-      <div class="metric-sub">${esc(latestSub)}</div>
+    <div class="metric clickable" ${drillAttrs("drill-month", { month: shown.month, bucket: "opex" })}>
+      <div class="metric-label">Core Op-Ex / mo${CHEV}</div>
+      <div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div>
+      <div class="metric-sub">${latestSub}</div>
+      <div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}${hasReimb && netAvgOpex != null ? ` &middot; net ${esc(fmt(netAvgOpex))} after reimbursements` : ""}</div>
     </div>
-    <div class="metric"><div class="metric-label">Core Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
-    ${hasReimb ? `<div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">core, after reimbursements</div></div>` : ""}
-    <div class="metric clickable${hasReimb ? "" : " wide"}" role="button" tabindex="0" data-action="open-sheet" data-sheet="out"><div class="metric-label">Total out${CHEV}</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div><div class="metric-sub">${esc(outSplit(outBreakdown(filtered)))}</div></div>
-    ${ui.hideIncome ? "" : `<div class="metric wide"><div class="metric-label">Savings / mo</div><div class="metric-value">${esc(fmt(totalSavings / filtered.length))}</div><div class="metric-sub">${esc(savingsSub)}</div></div>`}
-    ${oneOffTotal || pendingSuggestions ? `<div class="metric wide ${pendingSuggestions ? "clickable" : ""}" ${pendingSuggestions ? 'role="button" tabindex="0" data-action="open-sheet" data-sheet="review"' : ""}><div class="metric-label">One-offs${pendingSuggestions ? CHEV : ""}</div>
-      <div class="metric-value">${esc(fmt(oneOffTotal))}<small> &middot; ${esc(fmt(oneOffTotal / filtered.length))}/mo</small></div>
-      <div class="metric-sub">${oneOffByType.map(([t, v]) => `${esc(t)} ${esc(fmt(v))}`).join(" &middot; ") || "None flagged yet"}${pendingSuggestions ? ` &middot; <button class="link-btn" data-action="open-sheet" data-sheet="review">${pendingSuggestions} to review</button>` : ""}</div></div>` : ""}
+    <div class="metric clickable" role="button" tabindex="0" data-action="open-sheet" data-sheet="out"><div class="metric-label">Total out${CHEV}</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div><div class="metric-sub">${esc(outSplit(outBreakdown(filtered), savingsRate))}</div>
+      ${pendingSuggestions ? `<div class="metric-sub"><button class="link-btn" data-action="open-sheet" data-sheet="review">${pendingSuggestions} one-off${pendingSuggestions !== 1 ? "s" : ""} to review</button></div>` : ""}</div>
   </div>
   <div class="card">
     <p class="card-title">Monthly spend pattern</p>
@@ -2013,21 +2006,23 @@ function renderAddMonth() {
 /* ============================== total out ============================== */
 // Fixed bills and savings can back out salary, so with income hidden they
 // show as one figure, as in the month drill.
-function outSplit(b) {
+function outSplit(b, savingsRate) {
   const parts = [["Spend", b.spend], ["One-offs", b.oneOffs + b.ruleOneOffs]];
   if (ui.hideIncome) parts.push(["Fixed & saved", b.fixed + b.saved]);
-  else parts.push(["Fixed", b.fixed], ["Saved", b.saved]);
-  return parts.filter(([, v]) => v).map(([k, v]) => `${k} ${fmt(v)}`).join(" · ");
+  else parts.push(["Fixed", b.fixed], ["Saved", b.saved, savingsRate != null && b.saved ? ` (${savingsRate}%)` : ""]);
+  return parts.filter(([, v]) => v).map(([k, v, note]) => `${k} ${fmt(v)}${note || ""}`).join(" · ");
 }
 // From core op-ex to Total out, one step a row.
 function renderOutSheet() {
   const { filtered } = periodMonths(), b = outBreakdown(filtered);
+  const inPeriod = new Set(filtered.map(m => m.month)), flagged = oneOffModel().flagged.filter(r => inPeriod.has(r.month));
+  const byType = Object.keys(FLAG_GROUPS).map(t => [SPEND_TYPES[t].label, flagged.filter(r => r.type === t).reduce((s, r) => s + r.amount, 0)]).filter(([, v]) => v).map(([t, v]) => `${t} ${fmt(v)}`).join(" · ");
   const signed = v => v < 0 ? `−${fmt(-v)}` : `+${fmt(v)}`;
   const rows = [
     ["Core op-ex", `${b.confirmedMonths} month${b.confirmedMonths !== 1 ? "s" : ""} with card statements`, fmt(b.core)],
     ["Spread shares", "Asset and prepaid buys counted in op-ex, paid in their own month", signed(-b.spread)],
     ["Spend, no card statement", "Bank spend in months still waiting on cards", signed(b.noCard)],
-    ["One-offs paid", "Flagged rows, at what was paid", signed(b.oneOffs)],
+    ["One-offs paid", byType || "Flagged rows, at what was paid", signed(b.oneOffs)],
     ["Other one-offs", "Your one-off categories", signed(b.ruleOneOffs)],
     ...(ui.hideIncome ? [["Fixed bills & savings", "", signed(b.fixed + b.saved)]]
       : [["Fixed bills", "", signed(b.fixed)], ["Savings", "", signed(b.saved)]]),
