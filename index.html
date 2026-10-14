@@ -679,15 +679,16 @@ function opexLineItems(months, category) {
   return rows.sort((a, b) => b.amount - a.amount);
 }
 /* ============================== one-off spend ==============================
-   Rows flagged asset, prepaid, exceptional or capital (see categorise.js). Saved month
+   Rows flagged asset, prepaid or exceptional (see categorise.js). Saved month
    totals stay cash. Core op-ex is worked out here: a flagged row leaves its
-   month, and an asset or prepaid row comes back as an even share in each
+   month, and a prepaid row comes back as an even share in each
    month it's spread over. Total Out stays cash. */
 const SPEND_TYPES = DuitCategorise.SPEND_TYPES;
-const FLAG_GROUPS = { asset: "Assets", prepaid: "Prepaid", exceptional: "Exceptional", capital: "Capital" };
+const FLAG_GROUPS = { asset: "Assets", prepaid: "Prepaid", exceptional: "Exceptional" };
 function spendFlags(t) {
   const out = {};
-  if (SPEND_TYPES[t.spendType]) { out.spendType = t.spendType; if (Number(t.life) > 0) out.life = Number(t.life); }
+  const type = DuitCategorise.canonSpendType(t.spendType);
+  if (SPEND_TYPES[type]) { out.spendType = type; if (Number(t.life) > 0) out.life = Number(t.life); }
   if (t.suggestDismissed) out.suggestDismissed = true;
   return out;
 }
@@ -856,7 +857,14 @@ const docIdForMonth = month => month.replace(/\s+/g, "_");
 const docIdForCommitment = name => name.replace(/[^\w-]+/g, "_") || "item";
 // Months saved before a category rename still carry the old labels in their
 // totals. Fold them into the current ones as they load.
-const canonMonth = m => (m && m.categories ? { ...m, categories: DuitCategorise.canonCategoryTotals(m.categories) } : m);
+// Old one-off types are folded in too: "capital" is now "asset", which no longer spreads.
+const canonTx = t => t.spendType && DuitCategorise.canonSpendType(t.spendType) !== t.spendType ? { ...t, spendType: DuitCategorise.canonSpendType(t.spendType) } : t;
+const canonMonth = m => {
+  if (!m) return m;
+  const out = m.categories ? { ...m, categories: DuitCategorise.canonCategoryTotals(m.categories) } : { ...m };
+  if (m.transactions) out.transactions = m.transactions.map(canonTx);
+  return out;
+};
 // rules: null until the user saves their own, so the defaults apply.
 const emptyData = () => ({ months: [], fixedCommitments: {}, statements: {}, rules: null, accounts: {} });
 function loadLocal() {
@@ -1974,7 +1982,7 @@ function renderCatDrill(d) {
   <div class="drill-section">${items.length} transaction${items.length !== 1 ? "s" : ""}${items.length > shown.length ? ` &middot; showing ${shown.length}` : ""}</div>
   ${items.length ? `<div class="toggle-row" style="margin:8px 0;">${sortBtn("date", "Newest")}${sortBtn("amount", "Largest")}</div>` : ""}
   ${shown.some(tx => tx.guessed) ? `<p class="paste-help" style="margin:0 0 8px;">Rows marked ~ are categorised from the description, not a saved label.</p>` : ""}
-  ${d.bucket === "opex" && shown.some(tx => tx.spendType) ? `<p class="paste-help" style="margin:0 0 8px;">Flagged rows show what was paid. Core op-ex leaves exceptional and capital rows out and spreads asset and prepaid rows over their months, so the rows may not add up to the total.</p>` : ""}
+  ${d.bucket === "opex" && shown.some(tx => tx.spendType) ? `<p class="paste-help" style="margin:0 0 8px;">Flagged rows show what was paid. Core op-ex leaves asset and exceptional rows out and spreads prepaid rows over their months, so the rows may not add up to the total.</p>` : ""}
   <div class="items drill-list">${list || `<p class="paste-help">No line items. Months entered by hand have totals only.</p>`}</div>
   ${items.length ? `<div class="btn-row drill-more"><button class="btn" data-action="drill-to-txns">See all in Transactions</button></div>` : ""}`;
 }
@@ -2020,7 +2028,7 @@ function renderOutSheet() {
   const signed = v => v < 0 ? `−${fmt(-v)}` : `+${fmt(v)}`;
   const rows = [
     ["Core op-ex", `${b.confirmedMonths} month${b.confirmedMonths !== 1 ? "s" : ""} with card statements`, fmt(b.core)],
-    ["Spread shares", "Asset and prepaid buys counted in op-ex, paid in their own month", signed(-b.spread)],
+    ["Spread shares", "Prepaid fees counted in op-ex, paid in their own month", signed(-b.spread)],
     ["Spend, no card statement", "Bank spend in months still waiting on cards", signed(b.noCard)],
     ["One-offs paid", byType || "Flagged rows, at what was paid", signed(b.oneOffs)],
     ["Other one-offs", "Your one-off categories", signed(b.ruleOneOffs)],
@@ -2040,7 +2048,7 @@ function renderReview() {
   const inPeriod = new Set(periodMonths().filtered.map(m => m.month));
   const rows = model.rows.filter(r => inPeriod.has(r.month) && model.suggestions.has(r.key)).sort((a, b) => dateKey(b.date) - dateKey(a.date));
   if (!rows.length) return `<p class="paste-help" style="margin:0;">Nothing left to review in this period.</p>`;
-  return `<p class="paste-help">Confirm to take a row out of core op-ex. Asset and prepaid rows are spread over their months. Tap a row to pick another type.</p>
+  return `<p class="paste-help">Confirm to take a row out of core op-ex. Prepaid rows are spread over their months. Tap a row to pick another type.</p>
   ${rows.map(r => { const c = spendControls(r.key, r.tx); return `<div class="item-row"><span class="item-date">${esc(r.date)}</span><span class="item-desc" data-action="edit-spend" data-key="${esc(r.key)}">${esc(r.description)}</span><span class="item-amt">${esc(fmt(r.amount))}</span></div><div class="item-flags">${c.tag}</div>${c.editor}`; }).join("")}`;
 }
 

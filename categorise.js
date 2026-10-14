@@ -115,17 +115,17 @@ function canonCategoryTotals(totals) {
 }
 
 /* One-off spend, classed by what it buys rather than by size alone:
-   asset (lasts years, spread over its life), prepaid (covers a coming period,
-   spread over it), exceptional (kept out of core op-ex, shown on its own) and
-   capital (a home or other balance-sheet buy, never counted as op-ex).
+   asset (a home, furniture or gadget that lasts years), prepaid (covers a
+   coming period, spread over it) and exceptional (a trip or other one-time
+   cost). Only prepaid is spread: it recurs on a known cycle, so a share of it
+   is part of what a month costs. Assets and exceptional rows leave core op-ex.
    The size threshold only decides what gets suggested. */
 const ONE_OFF_THRESHOLD = 500;
 const TRAVEL_CLUSTER_DAYS = 3;
 const SPEND_TYPES = {
-  asset: { label: "Asset", life: 36 },
+  asset: { label: "Asset", life: 0 },
   prepaid: { label: "Prepaid", life: 12 },
   exceptional: { label: "Exceptional", life: 0 },
-  capital: { label: "Capital", life: 0 },
 };
 const ASSET_CATEGORIES = new Set(["Electronics", "Home & Furniture"]);
 const PREPAID_MATCH = /ANNUAL FEE|CARD MEMBERSHIP|CARD FEE/i;
@@ -163,7 +163,11 @@ function suggestSpendTypes(rows) {
   });
 }
 
-// Months a flagged row is spread over: 0 for exceptional, capital or unflagged.
+// Older saves used "capital" for what is now an asset.
+const SPEND_TYPE_ALIASES = { capital: "asset" };
+const canonSpendType = type => SPEND_TYPE_ALIASES[type] || type;
+
+// Months a flagged row is spread over: 0 for anything but prepaid.
 function spreadLife(tx) {
   const t = tx && SPEND_TYPES[tx.spendType];
   if (!t || !t.life) return 0;
@@ -181,7 +185,7 @@ function monthShare(amount, life, fromMonth, month) {
 }
 
 const api = { CATEGORISER_VERSION, CATEGORY_ALIASES, OPEX_MATCH_RULES, canonCategory, merchantKey, buildCategoryHistory, classifyOpex, resolveCategory, canonCategoryTotals,
-  ONE_OFF_THRESHOLD, SPEND_TYPES, suggestSpendTypes, spreadLife, monthShare, dayNumber, monthNumber };
+  ONE_OFF_THRESHOLD, SPEND_TYPES, canonSpendType, suggestSpendTypes, spreadLife, monthShare, dayNumber, monthNumber };
 if (typeof module === "object" && module.exports) module.exports = api;
 else root.DuitCategorise = api;
 })(typeof self !== "undefined" ? self : this);
