@@ -276,6 +276,17 @@
   .key-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .key-row input{ flex:1 1 220px; min-width:0; }
   table.ledger td.pdf-desc{ max-width:200px; overflow:hidden; text-overflow:ellipsis; }
+  table.stmt-grid th.c, table.stmt-grid td{ text-align:center; padding:8px; }
+  table.stmt-grid tbody th{ text-align:left; font-weight:500; color:var(--text); text-transform:none; letter-spacing:0; position:static; background:none; border-bottom:1px solid var(--border); padding:8px 12px; white-space:nowrap; }
+  .stmt-cell svg{ vertical-align:middle; }
+  .stmt-cell.ok{ color:var(--success); }
+  .stmt-cell.inferred{ color:var(--text-2); }
+  .stmt-cell.warn, .stmt-cell.gap, .stmt-cell.due{ color:var(--danger); }
+  .stmt-cell.due{ font-weight:600; }
+  .stmt-cell.none{ color:var(--text-3); }
+  .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .stmt-legend{ display:flex; flex-wrap:wrap; gap:4px 16px; margin-top:12px; font-size:12px; color:var(--text-2); }
+  .stmt-legend .stmt-cell{ display:inline-flex; align-items:center; gap:4px; }
 
   .form-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
   @media (min-width:560px){ .form-grid.cols2{ grid-template-columns:1fr 1fr; } }
@@ -312,6 +323,7 @@
 <script src="pdf-import.js"></script>
 <script src="gemini-parse.js"></script>
 <script src="categorise.js"></script>
+<script src="statements.js"></script>
 <script>
 (function(){
 "use strict";
@@ -614,17 +626,17 @@ const canonMonth = m => (m && m.categories ? { ...m, categories: DuitCategorise.
 function loadLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) { const parsed = JSON.parse(raw); return { months: (parsed.months || []).map(canonMonth), fixedCommitments: parsed.fixedCommitments || {} }; }
+    if (raw) { const parsed = JSON.parse(raw); return { months: (parsed.months || []).map(canonMonth), fixedCommitments: parsed.fixedCommitments || {}, statements: parsed.statements || {} }; }
   } catch (e) {}
-  return { months: [], fixedCommitments: {} };
+  return { months: [], fixedCommitments: {}, statements: {} };
 }
 function saveLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); } catch (e) {} }
 
-let appData = { months: [], fixedCommitments: {} };
+let appData = { months: [], fixedCommitments: {}, statements: {} };
 let ui = {
   tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true,
   bucketOverview: "opex", bucketDeep: "opex", selectedCat: null,
-  sheet: null, // null | "add" | "paste" | "month" | "settings"
+  sheet: null, // null | "add" | "paste" | "month" | "settings" | "statements"
   customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null,
   storage: "connecting", // "connecting" | "synced" | "local"
 };
@@ -660,6 +672,10 @@ async function initPersistence() {
       snap => applySnapshotFixed(snap.docs.filter(d => d.exists).map(d => d.data())),
       () => {}
     );
+    db.collection("statements").onSnapshot(
+      snap => { const map = {}; snap.docs.filter(d => d.exists).forEach(d => { const r = d.data(); map[r.id] = r; }); appData.statements = map; render(); },
+      () => {}
+    );
   } else {
     ui.storage = "local";
     appData = loadLocal();
@@ -679,6 +695,16 @@ async function persistMonths(monthsArr) {
     appData.months = sortMonthKeys(Object.keys(byKey)).map(k => byKey[k]);
     saveLocal();
     resetPeriod();
+  }
+}
+// One record per account per statement month, so a re-import replaces it.
+async function persistStatements(records) {
+  if (dbApi) {
+    await Promise.all(records.map(r => dbApi.collection("statements").doc(r.id).set(r)));
+  } else {
+    appData.statements = { ...appData.statements };
+    records.forEach(r => { appData.statements[r.id] = r; });
+    saveLocal();
   }
 }
 async function persistFixedCommitment(name, amount) {
@@ -703,8 +729,10 @@ async function clearAllData() {
     await Promise.all(snap.docs.map(d => dbApi.collection("months").doc(d.id).delete()));
     const fsnap = await dbApi.collection("fixedCommitments").get();
     await Promise.all(fsnap.docs.map(d => dbApi.collection("fixedCommitments").doc(d.id).delete()));
+    const ssnap = await dbApi.collection("statements").get();
+    await Promise.all(ssnap.docs.map(d => dbApi.collection("statements").doc(d.id).delete()));
   } else {
-    appData = { months: [], fixedCommitments: {} };
+    appData = { months: [], fixedCommitments: {}, statements: {} };
     saveLocal();
   }
 }
@@ -799,6 +827,7 @@ function renderSheet() {
   else if (ui.sheet === "add") { key = "add"; title = "Add data"; body = renderAddMenu(); }
   else if (ui.sheet === "paste") { key = "paste"; title = "Paste or upload a table"; body = renderPastePanel(); }
   else if (ui.sheet === "month") { key = "month"; title = "Enter a month by hand"; body = renderAddMonth(); }
+  else if (ui.sheet === "statements") { key = "statements"; title = "Statements"; body = renderStatements(); }
   if (!key) return { key: null, html: "" };
   const error = ui.syncError ? `<div class="banner error">${WARN_ICON}<span>${esc(ui.syncError)}</span></div>` : "";
   return { key, html: `
@@ -919,7 +948,7 @@ function renderDataSettings() {
   return `
   <div class="section-label">Your data</div>
   <p class="settings-meta">${esc(statusText)} &middot; ${months.length} month${months.length !== 1 ? "s" : ""} (${esc(range)})${ui.lastSynced ? ` &middot; updated ${esc(ui.lastSynced)}` : ""}<br>Reads UOB, POSB and DBS card statements.</p>
-  <div class="btn-row" style="margin-top:0;"><button class="btn danger" data-action="clear-data">${ui.confirmClear ? "Really clear? Tap again" : "Clear all data"}</button></div>
+  <div class="btn-row" style="margin-top:0;"><button class="btn" data-action="open-sheet" data-sheet="statements">Statements imported</button><button class="btn danger" data-action="clear-data">${ui.confirmClear ? "Really clear? Tap again" : "Clear all data"}</button></div>
   <p class="settings-meta" style="margin-top:24px;"><a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> is a local-only finance ledger. Nothing you enter leaves your browser, unless you choose to read a statement with Gemini.</p>`;
 }
 
@@ -1049,14 +1078,48 @@ function missingCards(m) {
   const have = cardAccounts(m);
   return [...seen].filter(a => !have.has(a));
 }
-function renderNudge() {
-  const latest = appData.months[appData.months.length - 1];
-  const missing = missingCards(latest);
-  let msg = null;
-  if (!latest.cardSpendAvailable) msg = `<strong>${esc(latest.month)}</strong> has no card statement yet. Op-Ex figures skip it.`;
-  else if (missing.length) msg = `<strong>${esc(latest.month)}</strong> has no ${esc(missing.join(" or "))} statement yet, so its Op-Ex reads low.`;
-  if (!msg) return "";
-  return `<div class="card nudge"><p>${msg}</p><button class="btn small primary" data-action="open-add">Import</button></div>`;
+// Which statements are in, from saved records plus older imports inferred
+// from their transactions (statements.js).
+const statementCoverage = () => DuitStatements.coverage(Object.values(appData.statements || {}), appData.months);
+const shortDate = ms => { const d = new Date(ms); return `${d.getUTCDate()} ${MONTH_ORDER[d.getUTCMonth()]}`; };
+function renderStatementStrip() {
+  const issues = DuitStatements.recentIssues(statementCoverage());
+  if (!issues.length) return "";
+  const shown = issues.slice(-4).reverse().map(x => `<strong>${esc(x.account)}</strong> ${esc(x.month)} ${x.kind === "due" ? "due" : "missing"}`);
+  const more = issues.length > 4 ? ` and ${issues.length - 4} more` : "";
+  return `<div class="card nudge"><p>Statements to import: ${shown.join(" &middot; ")}${more}.</p><div class="btn-row" style="margin-top:0;"><button class="btn small" data-action="open-sheet" data-sheet="statements">View</button><button class="btn small primary" data-action="open-add">Import</button></div></div>`;
+}
+const CELL_LABEL = { ok: "Imported", inferred: "Imported before statements were tracked", warn: "Imported, but totals didn't match", gap: "Missing", due: "Overdue", none: "" };
+function statementCell(cell) {
+  const state = cell ? cell.state : "none", r = cell && cell.record;
+  const title = [CELL_LABEL[state], r && r.file, r && `statement ${r.statementDate}`, r && `${r.rows} row${r.rows !== 1 ? "s" : ""}`].filter(Boolean).join(" · ");
+  const mark = state === "ok" || state === "inferred" ? CHECK_ICON : state === "warn" ? WARN_ICON : state === "gap" ? CROSS_ICON : state === "due" ? "Due" : "·";
+  return `<td class="stmt-cell ${state}" title="${esc(title)}">${mark}${title ? `<span class="sr-only">${esc(title)}</span>` : ""}</td>`;
+}
+function renderStatements() {
+  const cov = statementCoverage();
+  if (!cov.accounts.length) return `<div class="card"><p class="paste-help" style="margin:0;">No statements imported yet. Import a PDF and it shows up here.</p></div>`;
+  const head = cov.accounts.map(a => `<th class="c">${esc(a.name)}</th>`).join("");
+  const body = cov.months.map(m => `<tr><th scope="row">${esc(m)}</th>${cov.accounts.map(a => statementCell(cov.cells[a.name][m])).join("")}</tr>`).join("");
+  const summary = cov.accounts.map(a => `<div class="pdf-check ${a.overdue ? "bad" : "ok"}">${a.overdue ? CROSS_ICON : CHECK_ICON}<span><strong>${esc(a.name)}</strong>: latest ${esc(a.last.statementDate)}${a.overdue ? ", next one overdue" : a.nextDue ? `, next around ${esc(shortDate(a.nextDue))}` : ""}</span></div>`).join("");
+  return `
+  <div class="card">
+    <p class="paste-help">One statement per account per month, by statement date. A card cycle ending 12 Sep counts as Sep.</p>
+    <div class="scroll-x ledger-wrap"><table class="ledger stmt-grid">
+      <thead><tr><th>Month</th>${head}</tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+    <div class="stmt-legend">
+      <span class="stmt-cell ok">${CHECK_ICON} imported</span>
+      <span class="stmt-cell inferred">${CHECK_ICON} from older imports</span>
+      <span class="stmt-cell warn">${WARN_ICON} totals didn't match</span>
+      <span class="stmt-cell gap">${CROSS_ICON} missing</span>
+      <span><span class="stmt-cell due">Due</span> overdue</span>
+    </div>
+    <div class="pdf-checks" style="margin:12px 0 0;">${summary}</div>
+    <p class="paste-help" style="margin:12px 0 0;">Statements imported before this list existed are worked out from their transactions, dated by their latest one. Overdue means ${DuitStatements.GRACE_DAYS} days past the usual statement date.</p>
+    <div class="btn-row"><button class="btn primary" data-action="open-add">Import statements</button></div>
+  </div>`;
 }
 
 function renderBody() {
@@ -1064,8 +1127,7 @@ function renderBody() {
   const { from, to, filtered } = periodMonths();
   return `
   ${renderPeriod(from, to, filtered.length)}
-  ${renderNudge()}
-  ${ui.tab === "overview" ? renderOverview(filtered) : ""}
+  ${ui.tab === "overview" ? renderStatementStrip() + renderOverview(filtered) : ""}
   ${ui.tab === "deepdive" ? renderDeepDive(filtered) : ""}
   ${ui.tab === "txns" ? renderTxns() : ""}
   `;
@@ -1562,7 +1624,9 @@ function onClick(e) {
     const fileCount = st.files.filter(f => f.include).length;
     if (!rows.length) return;
     btn.disabled = true; btn.textContent = "Importing…";
-    persistMonths(planImport(rows).months).then(() => {
+    const importedAt = new Date().toISOString();
+    const records = st.files.filter(f => f.include).map(f => DuitStatements.recordFromImport(f, importedAt)).filter(Boolean);
+    persistMonths(planImport(rows).months).then(() => persistStatements(records)).then(() => {
       ui.pdfImport = null; ui.sheet = null; ui.syncError = null;
       if (!dbApi) ui.lastSynced = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" });
       showToast(`Imported ${rows.length} rows from ${fileCount} file${fileCount !== 1 ? "s" : ""}.`);
