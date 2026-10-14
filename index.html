@@ -140,6 +140,13 @@
 
   /* Transactions tab */
   .tx-search{ width:100%; margin-bottom:8px; }
+  .tx-filters{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+  .tx-filters .chip{ display:inline-flex; align-items:center; gap:4px; }
+  .stacked-bar .seg[data-action]{ cursor:pointer; }
+  .metric.clickable{ margin:0; padding:16px; cursor:pointer; }
+  .metric.clickable:hover, .metric.clickable:active{ border-color:var(--border-strong); background:var(--surface); }
+  .metric-label .chev{ float:right; margin:0; }
+  .drill-more{ margin-top:16px; }
   .tx-summary{ font-size:13px; color:var(--text-2); margin-bottom:8px; }
   .tx-day{ font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; padding:16px 0 4px; border-bottom:1px solid var(--border); }
   .tx-row{ display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); }
@@ -851,6 +858,7 @@ let ui = {
   sheet: null, // null | "add" | "paste" | "month" | "settings" | "rules" | "suggest" | "statements" | "accounts"
   rulesDraft: null, suggestions: null, // rule edits wait here until saved
   customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null,
+  txFilter: null, // { month, bucket, label }: set from a drill-down sheet's "See all"
   storage: "connecting", // "connecting" | "synced" | "local"
 };
 // Saving a flag rewrites a month but adds none, so the chosen period stays.
@@ -1047,13 +1055,14 @@ function showToast(msg) {
 }
 
 /* ============================== chart bits ============================== */
-function stackedBar(entries, total, colorOf) {
+// segAttrs(name) adds attributes to a segment, e.g. to make it tappable.
+function stackedBar(entries, total, colorOf, segAttrs) {
   colorOf = colorOf || hashColor;
   if (!entries.length || total <= 0) return `<div class="stacked-bar empty"></div>`;
   const segs = entries.map(([name, val]) => {
     if (val <= 0) return "";
     const w = (val / total * 100).toFixed(2);
-    return `<div class="seg" style="width:${w}%;background:${colorOf(name)}" title="${esc(name)}: ${esc(fmt(val))}"></div>`;
+    return `<div class="seg" style="width:${w}%;background:${colorOf(name)}" title="${esc(name)}: ${esc(fmt(val))}" ${segAttrs ? segAttrs(name) : ""}></div>`;
   }).join("");
   return `<div class="stacked-bar">${segs}</div>`;
 }
@@ -1670,7 +1679,7 @@ function renderOverview(filtered) {
     const missingCard = bucket === "opex" && partialCard.includes(m.month);
     return `<div class="month-row clickable" ${drillAttrs("drill-month", { month: m.month, bucket })}>
       <div class="month-head"><span class="month-label">${esc(m.month)}${missingCard ? '<span class="tag">partial</span>' : ""}</span><span class="month-total-wrap"><span class="month-total">${isPartial ? "—" : esc(fmt(total))}</span>${CHEV}</span></div>
-      ${isPartial ? `<div class="stacked-bar empty"></div>` : stackedBar(entries, total, colorOf)}
+      ${isPartial ? `<div class="stacked-bar empty"></div>` : stackedBar(entries, total, colorOf, cat => `data-action="drill-cat" data-bucket="${bucket}" data-month="${esc(m.month)}" data-cat="${esc(cat)}"`)}
     </div>`;
   }).join("");
 
@@ -1713,16 +1722,16 @@ function renderOverview(filtered) {
 
   return `
   <div class="metrics">
-    <div class="metric ${tone}">
-      <div class="metric-label">${esc(shown.month)} Core Op-Ex</div>
+    <div class="metric clickable ${tone}" ${drillAttrs("drill-month", { month: shown.month, bucket: "opex" })}>
+      <div class="metric-label">${esc(shown.month)} Core Op-Ex${CHEV}</div>
       <div class="metric-value">${shown.cardSpendAvailable ? esc(fmt(opexAmount(shown))) : "Pending"}</div>
       <div class="metric-sub">${esc(latestSub)}</div>
     </div>
     <div class="metric"><div class="metric-label">Core Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
     <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">core, after reimbursements</div></div>
-    <div class="metric"><div class="metric-label">Total out</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
+    <div class="metric clickable" role="button" tabindex="0" data-action="show-txns"><div class="metric-label">Total out${CHEV}</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
     ${ui.hideIncome ? "" : `<div class="metric wide"><div class="metric-label">Savings / mo</div><div class="metric-value">${esc(fmt(totalSavings / filtered.length))}</div><div class="metric-sub">${esc(savingsSub)}</div></div>`}
-    ${oneOffTotal || pendingSuggestions ? `<div class="metric wide"><div class="metric-label">One-offs</div>
+    ${oneOffTotal || pendingSuggestions ? `<div class="metric wide ${pendingSuggestions ? "clickable" : ""}" ${pendingSuggestions ? 'role="button" tabindex="0" data-action="open-sheet" data-sheet="review"' : ""}><div class="metric-label">One-offs${pendingSuggestions ? CHEV : ""}</div>
       <div class="metric-value">${esc(fmt(oneOffTotal))}<small> &middot; ${esc(fmt(oneOffTotal / filtered.length))}/mo</small></div>
       <div class="metric-sub">${oneOffByType.map(([t, v]) => `${esc(t)} ${esc(fmt(v))}`).join(" &middot; ") || "None flagged yet"}${pendingSuggestions ? ` &middot; <button class="link-btn" data-action="open-sheet" data-sheet="review">${pendingSuggestions} to review</button>` : ""}</div></div>` : ""}
   </div>
@@ -1787,8 +1796,8 @@ function renderDeepDive(filtered) {
   const merchPeriod = merchMonths.length ? `${merchMonths[0].month} – ${merchMonths[merchMonths.length - 1].month}` : "—";
   const flaggedNames = new Set(oneOffModel().flagged.filter(r => merchMonths.some(m => m.month === r.month)).map(r => r.description));
   const merchRows = ranked.map(([name, total]) => `
-    <div class="row2">
-      <div class="row2-top"><span class="row2-name">${esc(name)}${flaggedNames.has(name) ? '<span class="tag">Flagged</span>' : ""}</span><span class="row2-amt">${esc(fmt(total))}</span></div>
+    <div class="row2 clickable" role="button" tabindex="0" data-action="tx-search" data-q="${esc(name)}">
+      <div class="row2-top"><span class="row2-name">${esc(name)}${flaggedNames.has(name) ? '<span class="tag">Flagged</span>' : ""}</span><span class="row2-amt">${esc(fmt(total))}</span>${CHEV}</div>
       <div class="row2-bottom"><div class="row2-bar"><div class="row2-bar-fill" style="width:${(total / merchMax * 100).toFixed(0)}%;background:var(--text)"></div></div>
       ${merchAvgMonths.length > 1 ? `<span class="row2-total">${esc(fmt(Math.round((merchAvgTotals[name] || 0) / merchAvgMonths.length)))}/mo</span>` : ""}</div>
     </div>`).join("");
@@ -1896,6 +1905,8 @@ function deltaHtml(cur, prev, label, tone) {
   const cls = tone === "neutral" ? "" : (d > 0) === (tone === "save") ? "down" : "up";
   return `<span class="${cls}">${d > 0 ? "▲" : "▼"} ${esc(fmt(Math.abs(d)))}</span>${p != null ? ` (${d > 0 ? "+" : ""}${p}%)` : ""} vs ${esc(label)}`;
 }
+// Opens Transactions searched for the merchant, in the month when there is one.
+const merchantRow = (name, amt, month) => `<div class="item-row clickable" role="button" tabindex="0" data-action="tx-search" data-q="${esc(name)}"${month ? ` data-month="${esc(month)}"` : ""}><span class="item-desc">${esc(name)}</span><span class="item-amt">${esc(fmt(amt))}</span>${CHEV}</div>`;
 function itemRow(tx, dateText) {
   const c = spendControls(tx.key, tx);
   return `<div class="item-row"><span class="item-date">${esc(dateText)}</span><span class="item-desc" data-action="edit-spend" data-key="${esc(tx.key)}">${tx.guessed ? '<span class="guess">~ </span>' : ""}${esc(tx.description)}</span><span class="item-amt" style="color:${tx.amount < 0 ? "var(--success)" : "var(--text)"}">${tx.amount < 0 ? "−" : ""}${esc(fmt(Math.abs(tx.amount)))}</span></div>${c.tag ? `<div class="item-flags">${c.tag}</div>` : ""}${c.editor}`;
@@ -1913,8 +1924,9 @@ function renderMonthDrill(d) {
   const missing = d.bucket === "opex" ? missingCards(m) : [];
   const sub = !counts(m) ? "No card statement yet"
     : [deltaHtml(total, prevTotal, prev && shortMonth(prev.month), d.bucket === "other" ? "neutral" : "spend"), missing.length ? `partial: no ${esc(missing.map(sourceLabel).join(", "))} yet` : null].filter(Boolean).join(" &middot; ");
-  const stats = [["Core op-ex", m.cardSpendAvailable ? fmt(opexAmount(m)) : "Pending"], ["Fixed bills", fmt(m.giroOut)], ["Savings", fmt(savingsAmount(m))], ["Total out", fmt(totalOutAdjusted(m))]];
-  if (!ui.hideIncome) stats.push(["In", fmt(m.totalIn)], ["In less out", fmt(m.totalIn - totalOutAdjusted(m))]);
+  // Savings can back out salary, so it hides with income, as the Savings / mo card does.
+  const stats = [["Core op-ex", m.cardSpendAvailable ? fmt(opexAmount(m)) : "Pending"], ["Total out", fmt(totalOutAdjusted(m))]];
+  if (!ui.hideIncome) stats.push(["Fixed bills", fmt(m.giroOut)], ["Savings", fmt(savingsAmount(m))], ["In", fmt(m.totalIn)], ["In less out", fmt(m.totalIn - totalOutAdjusted(m))]);
   const max = entries.reduce((s, [, v]) => Math.max(s, v), 0);
   const rows = entries.map(([cat, v, tag]) => {
     const dl = prevMap ? v - (prevMap[cat] || 0) : null;
@@ -1934,7 +1946,8 @@ function renderMonthDrill(d) {
   <div class="drill-section">By category${prevMap ? ` &middot; change vs ${esc(shortMonth(prev.month))}` : ""}</div>
   ${rows || `<p class="paste-help">Nothing in this view for ${esc(m.month)}.</p>`}
   ${merchants.length ? `<div class="drill-section">Top card merchants</div>
-    ${merchants.map(x => `<div class="item-row"><span class="item-desc">${esc(x.name)}</span><span class="item-amt">${esc(fmt(x.amt))}</span></div>`).join("")}` : ""}`;
+    ${merchants.map(x => merchantRow(x.name, x.amt, m.month)).join("")}` : ""}
+  <div class="btn-row drill-more"><button class="btn" data-action="drill-to-txns">See ${esc(m.month)} in Transactions</button></div>`;
 }
 
 const DRILL_ITEM_LIMIT = 100;
@@ -1982,12 +1995,13 @@ function renderCatDrill(d) {
   </div>
   ${trend}
   ${merchants.length > 1 ? `<div class="drill-section">Top merchants</div>
-    ${merchants.map(([name, v]) => `<div class="item-row"><span class="item-desc">${esc(name)}</span><span class="item-amt">${esc(fmt(v))}</span></div>`).join("")}` : ""}
+    ${merchants.map(([name, v]) => merchantRow(name, v, d.month)).join("")}` : ""}
   <div class="drill-section">${items.length} transaction${items.length !== 1 ? "s" : ""}${items.length > shown.length ? ` &middot; showing ${shown.length}` : ""}</div>
   ${items.length ? `<div class="toggle-row" style="margin:8px 0;">${sortBtn("date", "Newest")}${sortBtn("amount", "Largest")}</div>` : ""}
   ${shown.some(tx => tx.guessed) ? `<p class="paste-help" style="margin:0 0 8px;">Rows marked ~ are categorised from the description, not a saved label.</p>` : ""}
   ${d.bucket === "opex" && shown.some(tx => tx.spendType) ? `<p class="paste-help" style="margin:0 0 8px;">Flagged rows show what was paid. Core op-ex leaves exceptional rows out and spreads asset and prepaid rows over their months, so the rows may not add up to the total.</p>` : ""}
-  <div class="items drill-list">${list || `<p class="paste-help">No line items. Months entered by hand have totals only.</p>`}</div>`;
+  <div class="items drill-list">${list || `<p class="paste-help">No line items. Months entered by hand have totals only.</p>`}</div>
+  ${items.length ? `<div class="btn-row drill-more"><button class="btn" data-action="drill-to-txns">See all in Transactions</button></div>` : ""}`;
 }
 
 /* ============================== add month tab ============================== */
@@ -2034,17 +2048,24 @@ function dateKey(d) {
 }
 const TX_PAGE = 100;
 function renderTxns() {
+  const f = ui.txFilter;
+  const chip = (field, text) => `<button class="chip on" data-action="tx-unfilter" data-field="${field}" aria-label="Remove filter: ${esc(text)}">${esc(text)}${ICON(ICONS.close, 14)}</button>`;
   return `
+  ${f ? `<div class="tx-filters">${f.label ? chip("label", f.label) : ""}${f.month ? chip("month", f.month) : ""}</div>` : ""}
   <input type="search" class="tx-search" id="tx-search" placeholder="Search description, category, account" value="${esc(ui.txQuery || "")}" autocomplete="off" aria-label="Search transactions">
   <div id="tx-list">${renderTxList()}</div>`;
 }
 function renderTxList() {
-  const q = (ui.txQuery || "").trim().toLowerCase();
-  const all = periodMonths().filtered.flatMap(m => (m.transactions || []).map((tx, i) => ({ ...tx, cat: resolveCategory(tx), key: txKey(m.month, i) })))
+  const q = (ui.txQuery || "").trim().toLowerCase(), f = ui.txFilter;
+  const months = periodMonths().filtered.filter(m => !f || !f.month || m.month === f.month);
+  // A label filter keeps the rows its drill-down sheet listed, so fixed bills and flagged groups match too.
+  const keys = f && f.label ? new Set(lineItems(months, f.bucket, f.label).map(r => r.key)) : null;
+  const all = months.flatMap(m => (m.transactions || []).map((tx, i) => ({ ...tx, cat: resolveCategory(tx), key: txKey(m.month, i) })))
+    .filter(tx => !keys || keys.has(tx.key))
     .filter(tx => !(ui.hideIncome && tx.deposit != null && currentRules().isSalary(tx.description)))
     .filter(tx => !q || [tx.description, tx.cat, accountLabel(tx.account)].some(v => String(v || "").toLowerCase().includes(q)))
     .sort((a, b) => dateKey(b.date) - dateKey(a.date));
-  if (!all.length) return `<div style="font-size:14px;color:var(--text-2);padding:16px 0;">${q ? "No transactions match." : "No line items in this period. Months entered by hand have totals only."}</div>`;
+  if (!all.length) return `<div style="font-size:14px;color:var(--text-2);padding:16px 0;">${q || f ? "No transactions match." : "No line items in this period. Months entered by hand have totals only."}</div>`;
   const out = all.reduce((s, t) => s + (t.withdrawal || 0), 0), inn = all.reduce((s, t) => s + (t.deposit || 0), 0);
   const shown = all.slice(0, ui.txLimit || TX_PAGE);
   let day = null;
@@ -2117,6 +2138,8 @@ function wireOnce() {
     else if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches('[role="button"][data-action]')) { e.preventDefault(); e.target.click(); }
   });
   // Back closes the top drill-down sheet. Each open level pushed one history entry.
+  // The page doesn't move under a sheet, so there's no scroll to restore, and restoring one fights "See all".
+  try { history.scrollRestoration = "manual"; } catch (e) {}
   window.addEventListener("popstate", e => {
     const depth = (e.state && e.state.drill) || 0;
     if (depth < ui.drill.length) { ui.drill = ui.drill.slice(0, depth); ui.editTx = null; render(); }
@@ -2201,7 +2224,7 @@ function onClick(e) {
     if (btn.classList.contains("sheet-backdrop") && e.target !== btn) return;
     ui.sheet = null; ui.keyTest = null; ui.restore = null; closeDrill(ui.drill.length); render();
   }
-  else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); closeDrill(ui.drill.length); ui.txLimit = 0; ui.editTx = null; render(); window.scrollTo(0, 0); }
+  else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); closeDrill(ui.drill.length); ui.txFilter = null; ui.txLimit = 0; ui.editTx = null; render(); window.scrollTo(0, 0); }
   else if (action === "edit-spend") { const k = btn.getAttribute("data-key"); ui.editTx = ui.editTx === k ? null : k; render(); }
   else if (action === "confirm-spend") saveSpend(btn.getAttribute("data-key"), { spendType: btn.getAttribute("data-type"), life: null });
   else if (action === "dismiss-spend") saveSpend(btn.getAttribute("data-key"), { suggestDismissed: true });
@@ -2238,12 +2261,25 @@ function onClick(e) {
     const top = ui.drill[ui.drill.length - 1], month = btn.getAttribute("data-month");
     if (top) { top.month = top.month === month ? null : month; ui.editTx = null; render(); }
   }
+  else if (action === "show-txns" || action === "drill-to-txns" || action === "tx-search") {
+    const top = ui.drill[ui.drill.length - 1], month = btn.getAttribute("data-month");
+    ui.txFilter = action === "drill-to-txns" && top ? (top.kind === "cat" ? { month: top.month, bucket: top.bucket, label: top.cat } : { month: top.month })
+      : action === "tx-search" && month ? { month } : null;
+    ui.txQuery = action === "tx-search" ? btn.getAttribute("data-q") : "";
+    ui.tab = "txns"; ui.txLimit = 0; ui.editTx = null;
+    closeDrill(ui.drill.length); render(); window.scrollTo(0, 0);
+  }
+  else if (action === "tx-unfilter") {
+    const f = { ...ui.txFilter }, field = btn.getAttribute("data-field");
+    if (field === "label") { delete f.label; delete f.bucket; } else delete f.month;
+    ui.txFilter = f.label || f.month ? f : null; ui.txLimit = 0; render();
+  }
   else if (action === "drill-sort") { ui.drillSort = btn.getAttribute("data-sort"); render(); }
   else if (action === "clear-data") {
     if (ui.confirmClear) {
       const storage = ui.storage;
       clearAllData().then(() => {
-        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", bucketDeep: "opex", drill: [], drillSort: "date", sheet: null, customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null, storage };
+        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", bucketDeep: "opex", drill: [], drillSort: "date", sheet: null, customPeriod: false, txQuery: "", txFilter: null, txLimit: 0, syncError: null, lastSynced: null, storage };
         showToast("Data cleared.");
         render();
       }).catch(err => { ui.syncError = "Couldn't clear data: " + err.message; render(); });
