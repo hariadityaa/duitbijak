@@ -26,7 +26,12 @@ function buildMonths(cleanRows) {
       if (route.kind === "skip") return;
       if (route.kind === "fixed") { giroOut += tx.amount; giroCategories[route.name] = round2((giroCategories[route.name] || 0) + tx.amount); return; }
       if (route.kind === "salary") { salaryIn += tx.amount; return; }
-      if (route.kind === "otherIn") { otherIn += tx.amount; return; }
+      if (route.kind === "otherIn") {
+        // A friend paying you back is a negative one-off, like a card refund labelled Reimbursement.
+        if (rules.isReimbursement(tx.description) || resolveCategory(tx) === "Reimbursement") { otherOut -= tx.amount; otherCategories.Reimbursement = round2((otherCategories.Reimbursement || 0) - tx.amount); }
+        else otherIn += tx.amount;
+        return;
+      }
       const label = resolveCategory(tx);
       if (label === "Credit Card Payment") return;
       if (rules.isOneOff(label)) { otherOut += tx.amount; otherCategories[label] = round2((otherCategories[label] || 0) + tx.amount); }

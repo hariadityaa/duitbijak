@@ -80,14 +80,17 @@ function renderMonthDrill(d) {
   const prev = i > 0 ? appData.months[i - 1] : null;
   const counts = x => !(d.bucket === "opex" && !x.cardSpendAvailable);
   const entries = bucketEntries(m, d.bucket);
-  const total = entries.reduce((s, [, v]) => s + v, 0);
+  // Op-ex totals are net of what friends paid back; the category rows stay gross.
+  const repaid = x => d.bucket === "opex" && x.cardSpendAvailable ? reimbursementAmount(x) : 0;
+  const total = entries.reduce((s, [, v]) => s + v, 0) - repaid(m);
   const prevMap = prev && counts(prev) ? Object.fromEntries(bucketEntries(prev, d.bucket).map(([k, v]) => [k, v])) : null;
-  const prevTotal = prevMap ? Object.values(prevMap).reduce((s, v) => s + v, 0) : null;
+  const prevTotal = prevMap ? Object.values(prevMap).reduce((s, v) => s + v, 0) - repaid(prev) : null;
   const missing = d.bucket === "opex" ? missingCards(m) : [];
   const sub = !counts(m) ? "No card statement yet"
     : [deltaHtml(total, prevTotal, prev && shortMonth(prev.month), d.bucket === "other" ? "neutral" : "spend"), missing.length ? `partial: no ${esc(missing.map(sourceLabel).join(", "))} yet` : null].filter(Boolean).join(" &middot; ");
   // Savings can back out salary, so it hides with income, as the Savings / mo card does.
   const stats = [["Core op-ex", m.cardSpendAvailable ? fmt(opexAmount(m)) : "Pending"], ["Total out", fmt(totalOutAdjusted(m))]];
+  if (reimbursementAmount(m) > 0) stats.push(["Repaid by friends", fmt(reimbursementAmount(m))]);
   if (!ui.hideIncome) stats.push(["Fixed bills", fmt(m.giroOut)], ["Savings", fmt(savingsAmount(m))], ["In", fmt(m.totalIn)], ["In less out", fmt(m.totalIn - totalOutAdjusted(m))]);
   const max = entries.reduce((s, [, v]) => Math.max(s, v), 0);
   const rows = entries.map(([cat, v, tag]) => {
@@ -219,6 +222,26 @@ function renderOutSheet() {
   <div class="item-row out-total"><span class="item-desc">Total out</span><span class="item-amt">${esc(fmt(b.total))}</span></div>
   <div class="btn-row drill-more"><button class="btn" data-action="show-txns">See transactions</button></div>`;
 }
+/* ============================== repayment review ============================== */
+// PayNow senders that look like friends paying you back. Confirming adds the
+// sender to the rules, so past and future credits reduce op-ex.
+function renderReimbReview() {
+  const list = reimbSuggestions();
+  if (!list.length) return `<p class="paste-help" style="margin:0;">Nothing left to review.</p>`;
+  const cards = list.map((s, i) => `
+    <div class="suggest-card">
+      <p class="settings-meta" style="margin:0;"><strong>${esc(s.name)}</strong> &middot; <span class="num">${esc(fmt(s.total))}</span> in ${s.count} credit${s.count !== 1 ? "s" : ""}${s.count > 1 ? `, ${esc(fmt(s.min))} to ${esc(fmt(s.max))}` : ""} &middot; ${s.months} month${s.months !== 1 ? "s" : ""}</p>
+      <p class="settings-meta">${esc(s.example)}</p>
+      ${s.check ? `<p class="settings-meta"><strong>Check this:</strong> includes ${esc(fmt(s.max))}. A large credit may be something other than a repayment.</p>` : ""}
+      <div class="btn-row">
+        <button class="btn ghost" data-action="reimb-no" data-idx="${i}">Not a repayment</button>
+        <button class="btn primary" data-action="reimb-yes" data-idx="${i}">Repayment</button>
+      </div>
+    </div>`).join("");
+  return `<p class="paste-help">PayNow credits from named people. A repayment reduces core op-ex and stops counting as income. The choice is saved per sender, so future credits follow it.</p>
+  ${cards}`;
+}
+
 /* ============================== one-off review ============================== */
 // Only the suggested rows in the period, newest first. Confirmed or
 // dismissed rows drop off the list as they're saved.

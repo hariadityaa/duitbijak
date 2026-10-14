@@ -140,11 +140,11 @@ function saveCategory(key, category) {
   }).catch(err => { appData.months = prev; ui.syncError = "Couldn't save that: " + err.message; render(); });
 }
 function ccpAdjustment(m) { const v = m.cardSpendAvailable && m.categories ? m.categories["Credit Card Payment"] : 0; return v ? -v : 0; }
-// Core op-ex: one-offs out, spread shares in.
-function opexAmount(m) { return m.cardSpendAvailable ? round2((m.cardSpend || 0) + ccpAdjustment(m) + coreAdjustment(m)) : null; }
+// Reimbursements are stored as a negative one-off; this is the positive amount paid back.
+function reimbursementAmount(m) { return -((m.otherCategories && m.otherCategories["Reimbursement"]) || 0); }
+// Core op-ex: one-offs out, spread shares in, and what friends paid back out.
+function opexAmount(m) { return m.cardSpendAvailable ? round2((m.cardSpend || 0) + ccpAdjustment(m) + coreAdjustment(m) - reimbursementAmount(m)) : null; }
 function totalOutAdjusted(m) { return round2((m.totalOut || 0) + ccpAdjustment(m)); }
-function reimbursementAmount(m) { return (m.otherCategories && m.otherCategories["Reimbursement"]) || 0; }
-function netOpexAmount(m) { const g = opexAmount(m); return g != null ? round2(g - reimbursementAmount(m)) : null; }
 /* Total out, taken apart so the parts add up to it. Core op-ex isn't cash:
    it carries spread shares of earlier buys and leaves flagged rows out, so
    the bridge takes the shares off and puts the one-offs back. Whole dollars,
@@ -155,7 +155,7 @@ function outBreakdown(months) {
   months.forEach(m => {
     const out = totalOutAdjusted(m), saving = savingsAmount(m);
     const paid = flagged.filter(r => r.month === m.month).reduce((s, r) => s + r.amount, 0);
-    total += out; fixed += m.giroOut || 0; saved += saving; ruleOneOffs += (m.otherOut || 0) - saving; oneOffs += paid;
+    total += out; fixed += m.giroOut || 0; saved += saving; ruleOneOffs += (m.otherOut || 0) - saving + reimbursementAmount(m); oneOffs += paid;
     if (m.cardSpendAvailable) { core += opexAmount(m); confirmedMonths++; }
     else noCard += out - (m.giroOut || 0) - (m.otherOut || 0) - paid;
   });
@@ -164,4 +164,14 @@ function outBreakdown(months) {
   parts.spread = parts.core + parts.noCard + parts.oneOffs + parts.ruleOneOffs + parts.fixed + parts.saved - parts.total;
   parts.spend = parts.core - parts.spread + parts.noCard;
   return parts;
+}
+
+// Senders whose PayNow credits look like friends paying you back, for review.
+let reimbFor = null, reimbRules = null, reimbList = [];
+function reimbSuggestions() {
+  if (reimbFor !== appData.months || reimbRules !== appData.rules) {
+    reimbFor = appData.months; reimbRules = appData.rules;
+    reimbList = DuitRules.suggestReimbursers(appData.months.flatMap(m => m.transactions || []), appData.rules, { isBank: isBankAccount });
+  }
+  return reimbList;
 }

@@ -85,6 +85,7 @@ function renderSheet() {
   else if (ui.sheet === "month") { key = "month"; title = "Enter a month by hand"; body = renderAddMonth(); }
   else if (ui.sheet === "statements") { key = "statements"; title = "Statements"; body = renderStatements(); }
   else if (ui.sheet === "review" && appData.months.length) { key = "review"; title = "One-offs to review"; body = renderReview(); }
+  else if (ui.sheet === "reimb" && appData.months.length) { key = "reimb"; title = "Possible repayments"; body = renderReimbReview(); }
   else if (ui.sheet === "out" && appData.months.length) { key = "out"; title = `Total out · ${periodLabel(periodMonths().filtered)}`; body = renderOutSheet(); }
   else if (ui.drill.length && appData.months.length) {
     const d = ui.drill[ui.drill.length - 1];

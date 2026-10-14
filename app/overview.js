@@ -22,14 +22,13 @@ function renderOverview(filtered) {
   const partialCard = partialMonths(filtered);
   const totalIn = filtered.reduce((s, m) => s + m.totalIn, 0);
   const totalOpex = confirmed.reduce((s, m) => s + opexAmount(m), 0);
-  const netTotalOpex = confirmed.reduce((s, m) => s + netOpexAmount(m), 0);
   const totalOut = filtered.reduce((s, m) => s + totalOutAdjusted(m), 0);
   const latest = filtered[filtered.length - 1];
   const prev = filtered.length > 1 ? filtered[filtered.length - 2] : null;
   const avgOpex = confirmed.length ? Math.round(totalOpex / confirmed.length) : null;
-  const netAvgOpex = confirmed.length ? Math.round(netTotalOpex / confirmed.length) : null;
-  // Net Op-Ex equals Core Op-Ex until something is reimbursed, so it only shows then.
-  const hasReimb = confirmed.some(m => reimbursementAmount(m));
+  // Core op-ex is net of what friends paid back. The sub-line shows how much that was.
+  const avgReimbursed = confirmed.length ? Math.round(confirmed.reduce((s, m) => s + reimbursementAmount(m), 0) / confirmed.length) : 0;
+  const repaySuggestions = reimbSuggestions().length;
   // The month card shows the latest confirmed month: the newest month is
   // usually still waiting on a card statement, and a partial total misleads.
   const shown = confirmed.length ? confirmed[confirmed.length - 1] : latest;
@@ -80,12 +79,13 @@ function renderOverview(filtered) {
 
   const monthRows = filtered.map(m => {
     const entries = bucketEntries(m, bucket);
-    const total = entries.reduce((s, [, v]) => s + v, 0);
+    const gross = entries.reduce((s, [, v]) => s + v, 0);
+    const total = bucket === "opex" ? gross - reimbursementAmount(m) : gross;
     const isPartial = bucket === "opex" && !m.cardSpendAvailable;
     const missingCard = bucket === "opex" && partialCard.includes(m.month);
     return `<div class="month-row clickable" ${drillAttrs("drill-month", { month: m.month, bucket })}>
       <div class="month-head"><span class="month-label">${esc(m.month)}${missingCard ? '<span class="tag">partial</span>' : ""}</span><span class="month-total-wrap"><span class="month-total">${isPartial ? "—" : esc(fmt(total))}</span>${CHEV}</span></div>
-      ${isPartial ? `<div class="stacked-bar empty"></div>` : stackedBar(entries, total, colorOf, cat => `data-action="drill-cat" data-bucket="${bucket}" data-month="${esc(m.month)}" data-cat="${esc(cat)}"`)}
+      ${isPartial ? `<div class="stacked-bar empty"></div>` : stackedBar(entries, gross, colorOf, cat => `data-action="drill-cat" data-bucket="${bucket}" data-month="${esc(m.month)}" data-cat="${esc(cat)}"`)}
     </div>`;
   }).join("");
 
@@ -121,7 +121,7 @@ function renderOverview(filtered) {
       <div class="row2-bottom"><div class="row2-bar"></div><span class="row2-total">${esc(fmt(-reimb))} total</span></div>
     </div>
     <div class="row2" style="font-weight:600;">
-      <div class="row2-top"><span class="row2-name" style="font-weight:600;">Net Op-Ex</span>
+      <div class="row2-top"><span class="row2-name" style="font-weight:600;">Core Op-Ex</span>
         <span class="row2-amt">${esc(fmt(perMonth(avgBucketTotal - avgReimb)))}<small>/mo</small></span></div>
       <div class="row2-bottom"><span class="row2-total">${esc(fmt(netBucketTotal))} total</span></div>
     </div>` : "";
@@ -132,7 +132,8 @@ function renderOverview(filtered) {
       <div class="metric-label">Core Op-Ex / mo${CHEV}</div>
       <div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div>
       <div class="metric-sub">${latestSub}</div>
-      <div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}${hasReimb && netAvgOpex != null ? ` &middot; net ${esc(fmt(netAvgOpex))} after reimbursements` : ""}</div>
+      <div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}${avgReimbursed > 0 ? ` &middot; after ${esc(fmt(avgReimbursed))}/mo repaid` : ""}</div>
+      ${repaySuggestions ? `<div class="metric-sub"><button class="link-btn" data-action="open-sheet" data-sheet="reimb">${repaySuggestions} possible repayment${repaySuggestions !== 1 ? "s" : ""} to review</button></div>` : ""}
     </div>
     <div class="metric clickable" role="button" tabindex="0" data-action="open-sheet" data-sheet="out"><div class="metric-label">Total out${CHEV}</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div><div class="metric-sub">${esc(outSplit(outBreakdown(filtered), savingsRate))}</div>
       ${pendingSuggestions ? `<div class="metric-sub"><button class="link-btn" data-action="open-sheet" data-sheet="review">${pendingSuggestions} one-off${pendingSuggestions !== 1 ? "s" : ""} to review</button></div>` : ""}</div>

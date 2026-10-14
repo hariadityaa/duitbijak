@@ -36,8 +36,13 @@ const DEFAULT_RULES = {
     "PAYMENT - THANK YOU", "PAYMENT RECEIVED",
   ],
   internalTransfers: ["/Funds Tr(a|f)nsfer/", "Funds Trf"],
+  // Bank credits that are friends paying you back. They reduce op-ex instead
+  // of counting as income. Filled in as suggestions are confirmed.
+  reimbursedBy: [],
+  // Senders you said are not repayments, so they stop being suggested.
+  notReimbursements: [],
 };
-const LISTS = ["salary", "oneOffCategories", "savingsCategories", "cardBillPayments", "internalTransfers"];
+const LISTS = ["salary", "oneOffCategories", "savingsCategories", "cardBillPayments", "internalTransfers", "reimbursedBy", "notReimbursements"];
 
 /* ---------------------------- patterns ---------------------------- */
 const isRegexForm = s => s.length > 2 && s[0] === "/" && s[s.length - 1] === "/";
@@ -96,6 +101,8 @@ function compileRules(raw) {
     isTransfer: any(r.internalTransfers),
     isCardBill: any(r.cardBillPayments),
     isSalary: any(r.salary),
+    isReimbursement: any(r.reimbursedBy),
+    isNotReimbursement: any(r.notReimbursements),
     fixedBillFor: d => { const b = bills.find(x => x.re.test(d || "")); return b ? b.name : null; },
     // Savings labels are one-off too, so op-ex leaves them out.
     isOneOff: label => oneOff.has(label),
@@ -174,6 +181,64 @@ function suggestFixedBills(txs, raw, opts) {
     out.push({ name, match, months: months.size, avg, example: descs[descs.length - 1] });
   });
   return out.sort((a, b) => b.avg - a.avg);
+}
+
+/* ---------------------------- repayments ---------------------------- */
+// Words that mark a sender as a business, not a friend.
+const COMPANY_WORDS = new Set(["PTE", "LTD", "LLP", "LIMITED", "PRIVATE", "SDN", "BHD", "INC", "CORP", "GROUP", "SERVICES", "DESIGN", "INTERIOR", "INTERIORS", "TESTING", "TRADING", "HOLDINGS", "ENTERPRISE", "STUDIO", "BANK"]);
+const PAYNOW_FROM = /Incoming PayNow[^:]*From:\s*(.+)$/i;
+// Credits this size or bigger are shown with a "check this" note.
+const REPAYMENT_CHECK_OVER = 500;
+
+// The sender's name on a PayNow credit: the run of all-capital words after
+// "From:". The memo follows it, and usually has lowercase letters. Null for
+// other credits, companies, and senders typed in mixed case.
+function paynowSender(description) {
+  const m = PAYNOW_FROM.exec(String(description || ""));
+  if (!m) return null;
+  const run = [];
+  for (const w of m[1].trim().split(/\s+/)) { if (/[a-z\d]/.test(w) || w === "OTHR") break; run.push(w); }
+  if (!run.length || run.join("").length < 3) return null;
+  if (run.some(w => COMPANY_WORDS.has(w.replace(/[^A-Z]/g, "")))) return null;
+  return run.join(" ");
+}
+
+// Proposes senders whose PayNow credits are probably friends paying you back.
+// Grouped by sender, shown once. A caps memo glued to a name ("… STEPHEN
+// DINNER") joins the shorter name. Credits under $1 (bank tests), rows with a
+// saved category, and senders already decided are left out.
+// txs are saved ledger rows ({ date, account, description, deposit, category });
+// isBank(account) picks bank-account rows.
+function suggestReimbursers(txs, raw, opts) {
+  const o = { isBank: () => true, ...(opts || {}) };
+  const c = compileRules(raw);
+  const byRun = new Map();
+  (txs || []).forEach(tx => {
+    if (!tx || !(tx.deposit >= 1) || tx.category || !o.isBank(tx.account)) return;
+    const d = tx.description || "";
+    if (c.isSalary(d) || c.isReimbursement(d) || c.isNotReimbursement(d)) return;
+    const run = paynowSender(d);
+    if (!run) return;
+    if (!byRun.has(run)) byRun.set(run, []);
+    byRun.get(run).push({ amount: tx.deposit, month: monthOf(tx.date), description: d });
+  });
+  const keys = [];
+  const groups = new Map();
+  [...byRun.keys()].sort((a, b) => a.split(" ").length - b.split(" ").length).forEach(run => {
+    const key = keys.find(k => run === k || run.startsWith(k + " ")) || (keys.push(run), run);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(...byRun.get(run));
+  });
+  const out = [];
+  groups.forEach((rows, key) => {
+    const amounts = rows.map(r => r.amount), total = amounts.reduce((s, v) => s + v, 0), max = Math.max(...amounts);
+    out.push({
+      name: titleCase(key), match: `From: ${key}`, count: rows.length, total: Math.round(total * 100) / 100,
+      min: Math.min(...amounts), max, months: new Set(rows.map(r => r.month)).size,
+      check: max >= REPAYMENT_CHECK_OVER, example: rows[rows.length - 1].description,
+    });
+  });
+  return out.sort((a, b) => b.count - a.count || b.total - a.total);
 }
 
 /* ---------------------------- sharing ---------------------------- */
@@ -266,7 +331,7 @@ ${lines.join("\n")}
 `;
 }
 
-const api = { DEFAULT_RULES, BUILT_IN_ONE_OFF, compilePattern, patternError, normaliseRules, compileRules, routeBankTx, routeCardTx, suggestFixedBills, exportRules, parseRulesText, mergeRules, buildRulesPrompt };
+const api = { DEFAULT_RULES, BUILT_IN_ONE_OFF, compilePattern, patternError, normaliseRules, compileRules, routeBankTx, routeCardTx, suggestFixedBills, suggestReimbursers, paynowSender, REPAYMENT_CHECK_OVER, exportRules, parseRulesText, mergeRules, buildRulesPrompt };
 if (typeof module === "object" && module.exports) module.exports = api;
 else root.DuitRules = api;
 })(typeof self !== "undefined" ? self : this);

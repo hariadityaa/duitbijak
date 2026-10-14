@@ -42,6 +42,8 @@ const RULE_LISTS = [
   ["savingsCategories", "Savings categories", "Category name", "Category labels for money moved into assets you keep. Kept out of op-ex; counted in the savings rate."],
   ["cardBillPayments", "Card bill payments", "Keyword or /regex/", "Skipped, so card spend isn't counted twice."],
   ["internalTransfers", "Internal transfers", "Keyword or /regex/", "Skipped. Add your own name to catch PayNow to yourself."],
+  ["reimbursedBy", "Repayments from friends", "Keyword or /regex/", "Bank credits matching these reduce op-ex instead of counting as income. Filled in as you confirm suggestions."],
+  ["notReimbursements", "Not repayments", "Keyword or /regex/", "Senders you said aren't repayments, so they stop being suggested."],
 ];
 // Lists of category labels rather than description patterns.
 const LABEL_LISTS = ["oneOffCategories", "savingsCategories"];

@@ -297,6 +297,22 @@ function onClick(e) {
     ui.suggestions.splice(i, 1);
     render();
   }
+  else if (action === "reimb-yes" || action === "reimb-no") {
+    const s = reimbSuggestions()[Number(btn.getAttribute("data-idx"))];
+    if (!s) return;
+    const list = action === "reimb-yes" ? "reimbursedBy" : "notReimbursements";
+    const base = DuitRules.normaliseRules(appData.rules);
+    const next = { ...base, [list]: [...base[list], s.match], updatedAt: new Date().toISOString() };
+    const prev = appData.rules;
+    btn.disabled = true;
+    appData.rules = next;
+    const rebuilt = action === "reimb-yes" ? rebuildMonths() : [];
+    persistRules(next).then(() => rebuilt.length ? persistMonths(rebuilt) : null).then(() => {
+      ui.syncError = null;
+      showToast(action === "reimb-yes" ? `${s.name} counted as repayments.` : `${s.name} skipped.`);
+      render();
+    }).catch(err => { appData.rules = prev; ui.syncError = "Couldn't save that: " + err.message; render(); });
+  }
   else if (action === "rules-save") {
     if (!ui.rulesDraft) return;
     const next = { ...DuitRules.normaliseRules(ui.rulesDraft), updatedAt: new Date().toISOString() };
