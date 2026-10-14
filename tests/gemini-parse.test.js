@@ -68,11 +68,14 @@ test("request: key in header only, native endpoint, schema, temperature 0", asyn
 test("account: same shape as parseStatement, closing balance check passes", async () => {
   const res = await G.parseWithGemini(pages, "a.pdf", KEY, { fetchFn: fakeFetch([answer(account)]) });
   assert.ifError(res.error);
-  assert.strictEqual(res.stmtType, "Other account");
+  assert.strictEqual(res.kind, "bank");
+  assert.strictEqual(res.source, "bank-testbank");
   assert.strictEqual(res.statementDate, "31 Jan 2027");
   assert.strictEqual(res.readBy, "gemini");
-  assert.deepStrictEqual(Object.keys(res).slice(0, 7), ["file", "bank", "stmtType", "label", "statementDate", "rows", "checks"]);
-  assert.deepStrictEqual(res.rows[1], { file: "a.pdf", bank: "Test Bank", date: "05 Jan 2027", description: "Coffee shop", amount: 20.2, type: "DR", category: "", stmtType: "Other account" });
+  assert.deepStrictEqual(Object.keys(res).sort(), ["accounts", "bank", "checks", "file", "kind", "label", "model", "readBy", "rows", "source", "statementDate"]);
+  // No number printed: one account with none, not a guess.
+  assert.deepStrictEqual(res.accounts.map(a => [a.id, a.name]), [["bank-testbank", "Test Bank account"]]);
+  assert.deepStrictEqual(res.rows[1], { file: "a.pdf", bank: "Test Bank", date: "05 Jan 2027", description: "Coffee shop", amount: 20.2, type: "DR", category: "", account: "bank-testbank" });
   // 1000.00 + 50.10 - 20.20 = 1029.90, in cents so no float drift.
   assert.deepStrictEqual(res.checks, [{ label: "Closing balance", expected: "1,029.90", actual: "1,029.90", ok: true }]);
 });
@@ -85,12 +88,33 @@ test("account: a wrong closing balance fails the check", async () => {
 
 test("card: previous balance + DR - CR = statement total", async () => {
   const res = await G.parseWithGemini(pages, "c.pdf", KEY, { fetchFn: fakeFetch([answer(card)]) });
-  assert.strictEqual(res.stmtType, "Other card");
+  assert.strictEqual(res.source, "card-testcard");
   assert.strictEqual(res.rows[0].date, "28 Jan 2027");
   assert.deepStrictEqual(res.checks, [{ label: "Statement total", expected: "120.50", actual: "120.50", ok: true }]);
   // No previous balance printed: plain DR - CR.
   const noPrev = G.statementChecks({ accountKind: "card", statementTotal: -379.5 }, G.validateRows(card.rows).rows, []);
   assert.deepStrictEqual(noPrev.map(c => c.ok), [true]);
+});
+
+test("account numbers: statement-wide, per row, and bad ones dropped", async () => {
+  assert.strictEqual(G.RESPONSE_SCHEMA.properties.accountLast4.nullable, true);
+  assert(G.RESPONSE_SCHEMA.properties.rows.items.properties.accountLast4);
+  const one = await G.parseWithGemini(pages, "a.pdf", KEY, { fetchFn: fakeFetch([answer({ ...account, accountLast4: "4321" })]) });
+  assert.deepStrictEqual(one.accounts.map(a => a.name), ["Test Bank account ·4321"]);
+  assert(one.rows.every(r => r.account === "bank-testbank-4321"));
+  // Two cards on one statement; a row with no number takes the statement's.
+  const rows = card.rows.map((r, i) => ({ ...r, accountLast4: ["1111", "2222", null][i] }));
+  const two = await G.parseWithGemini(pages, "c.pdf", KEY, { fetchFn: fakeFetch([answer({ ...card, accountLast4: "1111", rows })]) });
+  assert.deepStrictEqual(two.accounts.map(a => a.id), ["card-testcard-1111", "card-testcard-2222"]);
+  assert.deepStrictEqual(two.rows.map(r => r.account), ["card-testcard-1111", "card-testcard-2222", "card-testcard-1111"]);
+  // One number across rows, none at the top: the other rows join it.
+  const lone = card.rows.map((r, i) => ({ ...r, accountLast4: i === 1 ? "7777" : null }));
+  const three = await G.parseWithGemini(pages, "c.pdf", KEY, { fetchFn: fakeFetch([answer({ ...card, rows: lone })]) });
+  assert.deepStrictEqual(three.accounts.map(a => a.id), ["card-testcard-7777"]);
+  // A malformed number keeps the row, without a number.
+  const bad = await G.parseWithGemini(pages, "a.pdf", KEY, { fetchFn: fakeFetch([answer({ ...account, accountLast4: "12x4" })]) });
+  assert.strictEqual(bad.rows.length, 2);
+  assert.deepStrictEqual(bad.accounts.map(a => a.id), ["bank-testbank"]);
 });
 
 test("no totals: one failing check, never an auto-pass", async () => {
@@ -112,7 +136,7 @@ test("row validation drops bad rows and flags them", () => {
     { date: "2027-02-01", description: "Good", amount: 5.01, type: "CR" },
   ]);
   assert.strictEqual(dropped.length, 7);
-  assert.deepStrictEqual(rows, [{ date: "01 Feb 2027", description: "Good", amount: 5.01, type: "CR" }]);
+  assert.deepStrictEqual(rows, [{ date: "01 Feb 2027", description: "Good", amount: 5.01, type: "CR", number: null }]);
   const checks = G.statementChecks({ accountKind: "account", openingBalance: 0, closingBalance: 5.01 }, rows, dropped);
   assert.deepStrictEqual(checks.map(c => c.ok), [true, false], "dropped rows fail the file");
 });
