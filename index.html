@@ -233,7 +233,7 @@
   .trend-cell{ display:flex; align-items:flex-end; gap:4px; height:24px; min-width:60px; }
   .trend-cell .bar{ width:6px; border-radius:2px 2px 0 0; min-height:2px; flex-shrink:0; }
 
-  .items{ margin-top:8px; padding:12px; background:var(--surface-2); border-radius:var(--radius); }
+  .items{ padding:0; }
   .item-row{ display:flex; align-items:baseline; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; }
   .item-row:last-child{ border-bottom:none; }
   .item-date{ color:var(--text-2); font-size:12px; white-space:nowrap; }
@@ -799,6 +799,11 @@ function renderSheet() {
   else if (ui.sheet === "add") { key = "add"; title = "Add data"; body = renderAddMenu(); }
   else if (ui.sheet === "paste") { key = "paste"; title = "Paste or upload a table"; body = renderPastePanel(); }
   else if (ui.sheet === "month") { key = "month"; title = "Enter a month by hand"; body = renderAddMonth(); }
+  else if (ui.selectedCat && appData.months.length) {
+    const { filtered } = periodMonths();
+    const period = filtered.length > 1 ? `${filtered[0].month} – ${filtered[filtered.length - 1].month}` : filtered[0].month;
+    key = "cat:" + ui.selectedCat; title = `${ui.selectedCat} · ${period}`; body = renderItemized(filtered, ui.selectedCat);
+  }
   if (!key) return { key: null, html: "" };
   const error = ui.syncError ? `<div class="banner error">${WARN_ICON}<span>${esc(ui.syncError)}</span></div>` : "";
   return { key, html: `
@@ -1049,6 +1054,10 @@ function missingCards(m) {
   const have = cardAccounts(m);
   return [...seen].filter(a => !have.has(a));
 }
+// Months whose Op-Ex is complete: a card statement, and no card missing.
+// Averages use only these; a partial month would pull them down.
+function isConfirmed(m) { return m.cardSpendAvailable && !missingCards(m).length; }
+function partialMonths(months) { return months.filter(m => m.cardSpendAvailable && missingCards(m).length).map(m => m.month); }
 function renderNudge() {
   const latest = appData.months[appData.months.length - 1];
   const missing = missingCards(latest);
@@ -1090,37 +1099,45 @@ function bucketSources(m, bucket) {
 function renderOverview(filtered) {
   const bucket = ui.bucketOverview;
   const available = filtered.filter(m => m.cardSpendAvailable);
+  const confirmed = filtered.filter(isConfirmed);
+  const partialCard = partialMonths(filtered);
   const totalIn = filtered.reduce((s, m) => s + m.totalIn, 0);
-  const totalOpex = available.reduce((s, m) => s + opexAmount(m), 0);
-  const netTotalOpex = available.reduce((s, m) => s + netOpexAmount(m), 0);
+  const totalOpex = confirmed.reduce((s, m) => s + opexAmount(m), 0);
+  const netTotalOpex = confirmed.reduce((s, m) => s + netOpexAmount(m), 0);
   const totalOut = filtered.reduce((s, m) => s + totalOutAdjusted(m), 0);
   const latest = filtered[filtered.length - 1];
   const prev = filtered.length > 1 ? filtered[filtered.length - 2] : null;
-  const avgOpex = available.length ? Math.round(totalOpex / available.length) : null;
-  const netAvgOpex = available.length ? Math.round(netTotalOpex / available.length) : null;
+  const avgOpex = confirmed.length ? Math.round(totalOpex / confirmed.length) : null;
+  const netAvgOpex = confirmed.length ? Math.round(netTotalOpex / confirmed.length) : null;
   const latestMissing = missingCards(latest);
-  const delta = (prev && prev.cardSpendAvailable && latest.cardSpendAvailable && !latestMissing.length) ? pct(opexAmount(latest), opexAmount(prev)) : null;
+  const delta = (prev && isConfirmed(prev) && isConfirmed(latest)) ? pct(opexAmount(latest), opexAmount(prev)) : null;
   const tone = delta > 15 ? "warn" : delta < -15 ? "ok" : "";
   const latestSub = !latest.cardSpendAvailable ? "no card stmt yet"
     : latestMissing.length ? `partial: no ${latestMissing.join(", ")} yet`
     : delta != null ? `${delta > 0 ? "+" : ""}${delta}% vs prior` : "—";
   const partial = filtered.filter(m => !m.cardSpendAvailable).map(m => m.month);
 
-  const totals = {}; const tags = {};
+  // Op-Ex per-month figures divide by confirmed months only, so a partial
+  // month (a card statement still missing) doesn't pull the averages down.
+  const avgMonths = bucket === "opex" ? confirmed : filtered;
+  const totals = {}; const tags = {}; const avgTotals = {};
   filtered.forEach(m => bucketSources(m, bucket).forEach(({ src, tag }) => {
     if (!src) return;
     Object.entries(src).forEach(([k, v]) => { if (k === "Credit Card Payment") return; if (v) { totals[k] = (totals[k] || 0) + v; if (tag) tags[k] = tag; } });
+  }));
+  avgMonths.forEach(m => bucketSources(m, bucket).forEach(({ src }) => {
+    if (src) Object.entries(src).forEach(([k, v]) => { if (k !== "Credit Card Payment" && v) avgTotals[k] = (avgTotals[k] || 0) + v; });
   }));
   const cats = Object.entries(totals).sort((a, b) => b[1] - a[1]);
   const colorOf = colorMap(cats.map(([c]) => c));
   const bucketTotal = cats.reduce((s, [, v]) => s + v, 0);
   const maxCat = cats.reduce((m, [, v]) => Math.max(m, v), 0);
-  // Op-Ex only exists for months with a card statement, so its per-month
-  // figures divide by those months — matching the Avg Op-Ex metric above.
-  const bucketMonths = bucket === "opex" ? available.length : filtered.length;
+  const bucketMonths = avgMonths.length;
   const perMonth = v => bucketMonths ? v / bucketMonths : 0;
   const reimb = bucket === "opex" ? available.reduce((s, m) => s + reimbursementAmount(m), 0) : 0;
+  const avgReimb = bucket === "opex" ? confirmed.reduce((s, m) => s + reimbursementAmount(m), 0) : 0;
   const netBucketTotal = bucketTotal - reimb;
+  const avgBucketTotal = Object.values(avgTotals).reduce((s, v) => s + v, 0);
   const catValue = (m, cat) => bucketSources(m, bucket).reduce((s, { src }) => s + ((src || {})[cat] || 0), 0);
   const hasLatest = bucket === "opex" ? latest.cardSpendAvailable : true;
   const hasPrev = prev && (bucket === "opex" ? prev.cardSpendAvailable : true);
@@ -1132,8 +1149,9 @@ function renderOverview(filtered) {
     const entries = Object.entries(merged).sort((a, b) => b[1] - a[1]);
     const total = entries.reduce((s, [, v]) => s + v, 0);
     const isPartial = bucket === "opex" && !m.cardSpendAvailable;
+    const missingCard = bucket === "opex" && partialCard.includes(m.month);
     return `<div class="month-row">
-      <div class="month-head"><span class="month-label">${esc(m.month)}</span><span class="month-total">${isPartial ? "—" : esc(fmt(total))}</span></div>
+      <div class="month-head"><span class="month-label">${esc(m.month)}${missingCard ? '<span class="tag">partial</span>' : ""}</span><span class="month-total">${isPartial ? "—" : esc(fmt(total))}</span></div>
       ${isPartial ? `<div class="stacked-bar empty"></div>` : stackedBar(entries, total, colorOf)}
     </div>`;
   }).join("");
@@ -1150,7 +1168,7 @@ function renderOverview(filtered) {
       <div class="row2-top">
         <span class="swatch" style="background:${colorOf(cat)}"></span>
         <span class="row2-name">${esc(cat)}${tags[cat] ? `<span class="tag">${esc(tags[cat])}</span>` : ""}</span>
-        <span class="row2-amt">${esc(fmt(perMonth(total)))}<small>/mo</small></span>
+        <span class="row2-amt">${esc(fmt(perMonth(avgTotals[cat] || 0)))}<small>/mo</small></span>
       </div>
       <div class="row2-bottom">
         <div class="row2-bar"><div class="row2-bar-fill" style="width:${barPct}%;background:${colorOf(cat)}"></div></div>
@@ -1165,13 +1183,13 @@ function renderOverview(filtered) {
       <div class="row2-top">
         <span class="swatch" style="background:var(--success)"></span>
         <span class="row2-name">Reimbursement<span class="tag">Offset</span></span>
-        <span class="row2-amt" style="color:var(--success)">${esc(fmt(perMonth(-reimb)))}<small>/mo</small></span>
+        <span class="row2-amt" style="color:var(--success)">${esc(fmt(perMonth(-avgReimb)))}<small>/mo</small></span>
       </div>
       <div class="row2-bottom"><div class="row2-bar"></div><span class="row2-total">${esc(fmt(-reimb))} total</span></div>
     </div>
     <div class="row2" style="font-weight:600;">
       <div class="row2-top"><span class="row2-name" style="font-weight:600;">Net Op-Ex</span>
-        <span class="row2-amt">${esc(fmt(perMonth(netBucketTotal)))}<small>/mo</small></span></div>
+        <span class="row2-amt">${esc(fmt(perMonth(avgBucketTotal - avgReimb)))}<small>/mo</small></span></div>
       <div class="row2-bottom"><span class="row2-total">${esc(fmt(netBucketTotal))} total</span></div>
     </div>` : "";
 
@@ -1182,7 +1200,7 @@ function renderOverview(filtered) {
       <div class="metric-value">${latest.cardSpendAvailable ? esc(fmt(opexAmount(latest))) : "Pending"}</div>
       <div class="metric-sub">${esc(latestSub)}</div>
     </div>
-    <div class="metric"><div class="metric-label">Avg Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${available.length} month${available.length !== 1 ? "s" : ""} confirmed</div></div>
+    <div class="metric"><div class="metric-label">Avg Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
     <div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">after reimbursements</div></div>
     <div class="metric"><div class="metric-label">Total out</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
   </div>
@@ -1215,6 +1233,9 @@ function renderDeepDive(filtered) {
   const colorOf = colorMap(cats.map(([c]) => c));
   const maxCat = cats.reduce((m, [, v]) => Math.max(m, v), 0);
   const trendMonths = bucket === "opex" ? filtered.filter(m => m.cardSpendAvailable && m.categories) : filtered;
+  // "/mo" divides by confirmed months only; a partial month stays in the total and trend.
+  const avgMonths = bucket === "opex" ? trendMonths.filter(isConfirmed) : filtered;
+  const avgOf = cat => avgMonths.reduce((s, m) => s + bucketSrcs(m).reduce((t, src) => t + ((src || {})[cat] || 0), 0), 0) / avgMonths.length;
   const globalMax = Math.max(1, ...cats.map(([c]) => Math.max(...trendMonths.map(m => bucketSrcs(m).reduce((s, src) => s + ((src || {})[c] || 0), 0)), 0)));
 
   const catRows = cats.map(([cat, total]) => {
@@ -1222,7 +1243,6 @@ function renderDeepDive(filtered) {
     const selected = clickable && ui.selectedCat === cat;
     const monthVals = trendMonths.map(m => bucketSrcs(m).reduce((s, src) => s + ((src || {})[cat] || 0), 0));
     const barPct = total > 0 && maxCat > 0 ? (total / maxCat * 100).toFixed(0) : "0";
-    const items = selected ? renderItemized(filtered, cat) : "";
     return `<div class="row2 ${clickable ? "clickable" : ""} ${selected ? "selected" : ""}" ${clickable ? `data-action="select-cat" data-cat="${esc(cat)}"` : ""}>
       <div class="row2-top">
         <span class="swatch" style="background:${colorOf(cat)}"></span>
@@ -1232,15 +1252,16 @@ function renderDeepDive(filtered) {
       </div>
       <div class="row2-bottom">
         <div class="row2-bar"><div class="row2-bar-fill" style="width:${barPct}%;background:${colorOf(cat)}"></div></div>
-        ${trendMonths.length > 1 ? `<span class="row2-total">${esc(fmt(total / trendMonths.length))}/mo</span>` : ""}
+        ${avgMonths.length > 1 ? `<span class="row2-total">${esc(fmt(avgOf(cat)))}/mo</span>` : ""}
       </div>
-      ${items}
     </div>`;
   }).join("");
 
   const merchMonths = filtered.filter(m => m.cardSpendAvailable && m.topMerchants && m.topMerchants.length);
-  const merchTotals = {};
+  const merchAvgMonths = merchMonths.filter(isConfirmed);
+  const merchTotals = {}; const merchAvgTotals = {};
   merchMonths.forEach(m => m.topMerchants.forEach(({ name, amt }) => { merchTotals[name] = (merchTotals[name] || 0) + amt; }));
+  merchAvgMonths.forEach(m => m.topMerchants.forEach(({ name, amt }) => { merchAvgTotals[name] = (merchAvgTotals[name] || 0) + amt; }));
   const ranked = Object.entries(merchTotals).sort((a, b) => b[1] - a[1]).slice(0, 12);
   const merchMax = ranked[0] ? ranked[0][1] : 1;
   const merchPeriod = merchMonths.length ? `${merchMonths[0].month} – ${merchMonths[merchMonths.length - 1].month}` : "—";
@@ -1248,7 +1269,7 @@ function renderDeepDive(filtered) {
     <div class="row2">
       <div class="row2-top"><span class="row2-name">${esc(name)}</span><span class="row2-amt">${esc(fmt(total))}</span></div>
       <div class="row2-bottom"><div class="row2-bar"><div class="row2-bar-fill" style="width:${(total / merchMax * 100).toFixed(0)}%;background:var(--text)"></div></div>
-      ${merchMonths.length > 1 ? `<span class="row2-total">${esc(fmt(Math.round(total / merchMonths.length)))}/mo</span>` : ""}</div>
+      ${merchAvgMonths.length > 1 ? `<span class="row2-total">${esc(fmt(Math.round((merchAvgTotals[name] || 0) / merchAvgMonths.length)))}/mo</span>` : ""}</div>
     </div>`).join("");
 
   return `
@@ -1463,10 +1484,10 @@ function onClick(e) {
   if (action === "close-sheet") {
     // The backdrop carries this action too; only a tap on the backdrop itself closes.
     if (btn.classList.contains("sheet-backdrop") && e.target !== btn) return;
-    ui.sheet = null; ui.keyTest = null; render();
+    ui.sheet = null; ui.keyTest = null; ui.selectedCat = null; render();
   }
   else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; ui.txLimit = 0; render(); window.scrollTo(0, 0); }
-  else if (action === "open-add") { ui.sheet = "add"; ui.syncError = null; render(); }
+  else if (action === "open-add") { ui.sheet = "add"; ui.selectedCat = null; ui.syncError = null; render(); }
   else if (action === "open-sheet") {
     ui.sheet = btn.getAttribute("data-sheet"); render();
     const ta = document.getElementById("paste-input"); if (ta) ta.focus();
@@ -1487,7 +1508,7 @@ function onClick(e) {
   }
   else if (action === "toggle-income") { ui.hideIncome = !ui.hideIncome; render(); }
   else if (action === "set-bucket") { ui[btn.getAttribute("data-key")] = btn.getAttribute("data-value"); ui.selectedCat = null; render(); }
-  else if (action === "select-cat") { const c = btn.getAttribute("data-cat"); ui.selectedCat = ui.selectedCat === c ? null : c; render(); }
+  else if (action === "select-cat") { const c = btn.getAttribute("data-cat"); ui.selectedCat = c; render(); }
   else if (action === "clear-data") {
     if (ui.confirmClear) {
       const storage = ui.storage;
