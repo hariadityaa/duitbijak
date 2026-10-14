@@ -241,8 +241,34 @@
   .row2-delta.up{ color:var(--danger); } .row2-delta.down{ color:var(--success); } .row2-delta.flat{ color:var(--text-2); }
   .tag{ font-size:12px; margin-left:8px; padding:0 8px; border-radius:var(--radius-full); border:1px solid var(--border-strong); color:var(--text-2); font-weight:500; }
   .clickable{ cursor:pointer; margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:var(--radius-sm); transition:background-color var(--ease); }
-  .clickable:hover{ background:var(--surface-2); }
-  .clickable.selected{ background:var(--surface-2); }
+  .clickable:hover, .clickable:active{ background:var(--surface-2); }
+  .chev{ display:inline-flex; color:var(--text-3); flex-shrink:0; margin-left:-4px; }
+  .month-total-wrap{ display:flex; align-items:center; gap:4px; }
+
+  /* Drill-down sheets: a month, or a category over the period */
+  .sheet-head-l{ display:flex; align-items:center; gap:4px; min-width:0; }
+  .sheet-head-l h2{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sheet-head-l .icon-btn{ margin-left:-8px; }
+  .drill-head{ margin:4px 0 16px; }
+  .drill-total{ font-size:28px; font-weight:600; letter-spacing:-.02em; line-height:1.2; font-variant-numeric:tabular-nums; }
+  .drill-sub{ font-size:14px; color:var(--text-2); margin-top:4px; }
+  .drill-sub .up{ color:var(--danger); } .drill-sub .down{ color:var(--success); }
+  .row2-delta.save.up{ color:var(--success); } .row2-delta.save.down{ color:var(--danger); }
+  .drill-stats{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; margin-bottom:16px; }
+  .drill-stat{ background:var(--surface-2); border-radius:var(--radius); padding:8px 12px; }
+  .drill-stat span{ display:block; font-size:12px; color:var(--text-2); }
+  .drill-stat strong{ font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .drill-section{ font-size:12px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; font-weight:600; margin:16px 0 4px; }
+  .drill-trend{ display:flex; align-items:flex-end; gap:6px; height:104px; margin:4px 0 8px; overflow-x:auto; scrollbar-width:none; }
+  .drill-trend::-webkit-scrollbar{ display:none; }
+  .drill-trend .tb{ flex:1 0 28px; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:4px; padding:0; border:none; background:none; color:var(--text-2); font:inherit; font-size:11px; cursor:pointer; }
+  .drill-trend .tb b{ font-weight:500; font-size:10px; color:var(--text-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .drill-trend .tb i{ display:block; width:100%; max-width:28px; min-height:2px; border-radius:3px 3px 0 0; background:var(--text-3); }
+  .drill-trend .tb.on{ color:var(--text); font-weight:600; }
+  .drill-trend .tb.on i{ background:var(--text); }
+  .drill-trend .tb:disabled{ cursor:default; }
+  .drill-list .item-date{ min-width:48px; }
+  .drill-month{ display:flex; justify-content:space-between; font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; padding:16px 0 4px; border-bottom:1px solid var(--border); }
 
   .trend-cell{ display:flex; align-items:flex-end; gap:4px; height:24px; min-width:60px; }
   .trend-cell .bar{ width:6px; border-radius:2px 2px 0 0; min-height:2px; flex-shrink:0; }
@@ -820,7 +846,8 @@ function saveLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ap
 let appData = emptyData();
 let ui = {
   tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true,
-  bucketOverview: "opex", bucketDeep: "opex", selectedCat: null,
+  bucketOverview: "opex", bucketDeep: "opex",
+  drill: [], drillSort: "date", // drill-down sheets, top last: { kind: "month" | "cat", bucket, month, cat }
   sheet: null, // null | "add" | "paste" | "month" | "settings" | "rules" | "suggest" | "statements" | "accounts"
   rulesDraft: null, suggestions: null, // rule edits wait here until saved
   customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null,
@@ -1065,6 +1092,8 @@ const ICONS = {
   eyeOff: '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  chevron: '<path d="m9 18 6-6-6-6"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
 };
 const WARN_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`;
 function renderHeader() {
@@ -1095,7 +1124,7 @@ function renderNav() {
 // Which sheet shows. Settings and its rules sit over a PDF review, so a key
 // can be added mid-import and closing Settings returns to the review.
 function renderSheet() {
-  let key = null, title = "", body = "", closable = true;
+  let key = null, title = "", body = "", closable = true, back = false;
   if (ui.sheet === "settings") { key = "settings"; title = "Settings"; body = renderSettings(); }
   else if (ui.sheet === "rules" && ui.rulesDraft) { key = "rules"; title = "Transaction rules"; body = renderRules(); }
   else if (ui.sheet === "accounts") { key = "accounts"; title = "Accounts"; body = renderAccounts(); }
@@ -1106,17 +1135,20 @@ function renderSheet() {
   else if (ui.sheet === "month") { key = "month"; title = "Enter a month by hand"; body = renderAddMonth(); }
   else if (ui.sheet === "statements") { key = "statements"; title = "Statements"; body = renderStatements(); }
   else if (ui.sheet === "review" && appData.months.length) { key = "review"; title = "One-offs to review"; body = renderReview(); }
-  else if (ui.selectedCat && appData.months.length) {
-    const { filtered } = periodMonths();
-    const period = filtered.length > 1 ? `${filtered[0].month} – ${filtered[filtered.length - 1].month}` : filtered[0].month;
-    key = "cat:" + ui.selectedCat; title = `${ui.selectedCat} · ${period}`; body = renderItemized(filtered, ui.selectedCat);
+  else if (ui.drill.length && appData.months.length) {
+    const d = ui.drill[ui.drill.length - 1];
+    // The month filter isn't in the key, so picking a month keeps the scroll and skips the animation.
+    key = `drill:${ui.drill.length}:${d.kind}:${d.kind === "cat" ? d.cat : d.month}`;
+    back = ui.drill.length > 1;
+    if (d.kind === "month") { title = `${d.month} · ${BUCKET_LABEL[d.bucket]}`; body = renderMonthDrill(d); }
+    else { title = `${d.cat} · ${d.month || periodLabel(periodMonths().filtered)}`; body = renderCatDrill(d); }
   }
   if (!key) return { key: null, html: "" };
   const error = ui.syncError ? `<div class="banner error">${WARN_ICON}<span>${esc(ui.syncError)}</span></div>` : "";
   return { key, html: `
   <div class="sheet-backdrop" ${closable ? 'data-action="close-sheet"' : ""}>
     <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-      <div class="sheet-head"><h2>${esc(title)}</h2>${closable ? `<button class="icon-btn" data-action="close-sheet" aria-label="Close">${ICON(ICONS.close)}</button>` : ""}</div>
+      <div class="sheet-head"><div class="sheet-head-l">${back ? `<button class="icon-btn" data-action="drill-back" aria-label="Back">${ICON(ICONS.back)}</button>` : ""}<h2>${esc(title)}</h2></div>${closable ? `<button class="icon-btn" data-action="close-sheet" aria-label="Close">${ICON(ICONS.close)}</button>` : ""}</div>
       ${error}${body}
     </div>
   </div>` };
@@ -1632,15 +1664,12 @@ function renderOverview(filtered) {
   const hasPrev = prev && (bucket === "opex" ? prev.cardSpendAvailable : true);
 
   const monthRows = filtered.map(m => {
-    const srcs = bucketSources(m, bucket);
-    const merged = {};
-    srcs.forEach(({ src }) => { if (src) Object.entries(src).forEach(([k, v]) => { if (k !== "Credit Card Payment" && v) merged[k] = (merged[k] || 0) + v; }); });
-    const entries = Object.entries(merged).sort((a, b) => b[1] - a[1]);
+    const entries = bucketEntries(m, bucket);
     const total = entries.reduce((s, [, v]) => s + v, 0);
     const isPartial = bucket === "opex" && !m.cardSpendAvailable;
     const missingCard = bucket === "opex" && partialCard.includes(m.month);
-    return `<div class="month-row">
-      <div class="month-head"><span class="month-label">${esc(m.month)}${missingCard ? '<span class="tag">partial</span>' : ""}</span><span class="month-total">${isPartial ? "—" : esc(fmt(total))}</span></div>
+    return `<div class="month-row clickable" ${drillAttrs("drill-month", { month: m.month, bucket })}>
+      <div class="month-head"><span class="month-label">${esc(m.month)}${missingCard ? '<span class="tag">partial</span>' : ""}</span><span class="month-total-wrap"><span class="month-total">${isPartial ? "—" : esc(fmt(total))}</span>${CHEV}</span></div>
       ${isPartial ? `<div class="stacked-bar empty"></div>` : stackedBar(entries, total, colorOf)}
     </div>`;
   }).join("");
@@ -1653,11 +1682,11 @@ function renderOverview(filtered) {
     const deltaHtml = d != null && Math.abs(d) > 0.5
       ? `<span class="row2-delta ${d > 0 ? "up" : "down"}">${d > 0 ? "▲" : "▼"} ${esc(fmt(Math.abs(d)))}</span>`
       : `<span class="row2-delta flat">—</span>`;
-    return `<div class="row2">
+    return `<div class="row2 clickable" ${drillAttrs("drill-cat", { cat, bucket })}>
       <div class="row2-top">
         <span class="swatch" style="background:${colorOf(cat)}"></span>
         <span class="row2-name">${esc(cat)}${tags[cat] ? `<span class="tag">${esc(tags[cat])}</span>` : ""}</span>
-        <span class="row2-amt">${esc(fmt(perMonth(avgTotals[cat] || 0)))}<small>/mo</small></span>
+        <span class="row2-amt">${esc(fmt(perMonth(avgTotals[cat] || 0)))}<small>/mo</small></span>${CHEV}
       </div>
       <div class="row2-bottom">
         <div class="row2-bar"><div class="row2-bar-fill" style="width:${barPct}%;background:${colorOf(cat)}"></div></div>
@@ -1732,16 +1761,14 @@ function renderDeepDive(filtered) {
   const globalMax = Math.max(1, ...cats.map(([c]) => Math.max(...trendMonths.map(m => bucketSrcs(m).reduce((s, src) => s + ((src || {})[c] || 0), 0)), 0)));
 
   const catRows = cats.map(([cat, total]) => {
-    const clickable = bucket === "opex";
-    const selected = clickable && ui.selectedCat === cat;
     const monthVals = trendMonths.map(m => bucketSrcs(m).reduce((s, src) => s + ((src || {})[cat] || 0), 0));
     const barPct = total > 0 && maxCat > 0 ? (total / maxCat * 100).toFixed(0) : "0";
-    return `<div class="row2 ${clickable ? "clickable" : ""} ${selected ? "selected" : ""}" ${clickable ? `data-action="select-cat" data-cat="${esc(cat)}"` : ""}>
+    return `<div class="row2 clickable" ${drillAttrs("drill-cat", { cat, bucket })}>
       <div class="row2-top">
         <span class="swatch" style="background:${colorOf(cat)}"></span>
         <span class="row2-name">${esc(cat)}</span>
         ${trendCell(monthVals, globalMax)}
-        <span class="row2-amt">${esc(fmt(total))}</span>
+        <span class="row2-amt">${esc(fmt(total))}</span>${CHEV}
       </div>
       <div class="row2-bottom">
         <div class="row2-bar"><div class="row2-bar-fill" style="width:${barPct}%;background:${colorOf(cat)}"></div></div>
@@ -1768,7 +1795,7 @@ function renderDeepDive(filtered) {
 
   return `
   <div class="card">
-    <p class="card-title">Category breakdown${bucket === "opex" ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:14px;">(tap a row for line items)</span>' : ""}</p>
+    <p class="card-title">Category breakdown</p>
     ${bucketToggle("bucketDeep", bucket)}
     ${cats.length === 0 ? `<div style="font-size:14px;color:var(--text-2);padding:8px 0;">No data for this view.</div>` : catRows}
   </div>
@@ -1804,19 +1831,163 @@ function renderFixedCommitments() {
     </div>` : ""}
   </div>`;
 }
-function renderItemized(filtered, cat) {
-  const items = opexLineItems(filtered, cat);
-  const top = items.slice(0, 50);
-  const total = items.reduce((s, r) => s + r.amount, 0);
-  if (!items.length) return `<div class="items"><div style="font-size:14px;color:var(--text-2);">No matching transactions found.</div></div>`;
-  return `<div class="items">
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;font-size:14px;color:var(--text-2);">
-      <span>${items.length} matching transaction${items.length === 1 ? "" : "s"} &middot; total ${esc(fmt(total))}${items.length > 50 ? " &middot; showing top 50" : ""}</span>
-    </div>
-    <div style="font-size:14px;color:var(--text-2);margin-bottom:8px;">Rows marked ~ are guessed from the description, not the original manual tag — may not exactly reconcile with the total above.</div>
-    ${items.some(tx => tx.spendType) ? `<div style="font-size:14px;color:var(--text-2);margin-bottom:8px;">Flagged rows show what was paid. Core op-ex leaves exceptional rows out and spreads asset and prepaid rows over their months.</div>` : ""}
-    ${top.map(tx => { const c = spendControls(tx.key, tx); return `<div class="item-row"><span class="item-date">${esc(tx.date)}</span><span class="item-desc" data-action="edit-spend" data-key="${esc(tx.key)}">${tx.guessed ? '<span class="guess">~ </span>' : ""}${esc(tx.description)}</span><span class="item-amt" style="color:${tx.amount < 0 ? "var(--success)" : "var(--text)"}">${tx.amount < 0 ? "−" : ""}${esc(fmt(Math.abs(tx.amount)))}</span></div>${c.tag ? `<div class="item-flags">${c.tag}</div>` : ""}${c.editor}`; }).join("")}
-  </div>`;
+/* ============================== drill-down sheets ==============================
+   Tapping a month or a category opens a sheet over the page. Sheets stack two
+   deep (a month, then a category in it). Each level is a history entry, so the
+   phone's back button closes the top sheet instead of leaving the app. */
+const DRILL_MAX = 2;
+const BUCKET_LABEL = { opex: "Op-ex", other: "Other" };
+const CHEV = `<span class="chev">${ICON(ICONS.chevron, 16)}</span>`;
+const periodLabel = months => months.length > 1 ? `${months[0].month} – ${months[months.length - 1].month}` : months[0].month;
+const shortMonth = month => month.split(" ")[0];
+// $950, $1.2k, $12k: fits under a narrow bar.
+const fmtShort = n => Math.abs(n) < 1000 ? fmt(n) : `${n < 0 ? "-" : ""}$${(Math.abs(n) / 1000).toFixed(Math.abs(n) < 10000 ? 1 : 0)}k`;
+function drillAttrs(action, d) {
+  return `role="button" tabindex="0" data-action="${action}" data-bucket="${d.bucket}"${d.month ? ` data-month="${esc(d.month)}"` : ""}${d.cat ? ` data-cat="${esc(d.cat)}"` : ""}`;
+}
+function openDrill(entry) {
+  if (ui.drill.length >= DRILL_MAX) ui.drill[ui.drill.length - 1] = entry;
+  else { ui.drill.push(entry); try { history.pushState({ drill: ui.drill.length }, ""); } catch (e) {} }
+  ui.editTx = null;
+  render();
+}
+// Trims the stack now; the history entries go too, and popstate then finds nothing to do.
+function closeDrill(levels) {
+  const n = Math.min(levels, ui.drill.length);
+  if (!n) return;
+  ui.drill = ui.drill.slice(0, ui.drill.length - n);
+  ui.editTx = null;
+  try { history.go(-n); } catch (e) {}
+}
+// A month's bucket as [label, amount, tag] rows, largest first. Card bill payments are never spend.
+function bucketEntries(m, bucket) {
+  const merged = {}, tags = {};
+  bucketSources(m, bucket).forEach(({ src, tag }) => {
+    if (src) Object.entries(src).forEach(([k, v]) => { if (k === "Credit Card Payment" || !v) return; merged[k] = (merged[k] || 0) + v; if (tag) tags[k] = tag; });
+  });
+  return Object.entries(merged).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v, tags[k] || null]);
+}
+// The saved rows behind one label in a bucket, routed the way buildMonths and
+// the one-off model total them. Op-ex rows show cash, so flagged rows still appear.
+function lineItems(months, bucket, label) {
+  if (bucket === "opex") return opexLineItems(months, label);
+  const inMonths = new Set(months.map(m => m.month));
+  const group = Object.keys(FLAG_GROUPS).find(t => FLAG_GROUPS[t] === label);
+  if (group) return oneOffModel().flagged.filter(r => r.type === group && inMonths.has(r.month)).map(r => ({ ...r.tx, amount: r.amount, month: r.month, key: r.key }));
+  const rules = currentRules(), rows = [];
+  months.forEach(m => (m.transactions || []).forEach((tx, i) => {
+    const row = { description: tx.description, type: tx.withdrawal != null ? "DR" : "CR" };
+    const isLabel = () => rules.isOneOff(label) && resolveCategory(tx) === label;
+    let hit = false;
+    if (isBankAccount(tx.account)) { const r = DuitRules.routeBankTx(row, rules); hit = r.kind === "fixed" ? r.name === label : r.kind === "spend" && isLabel(); }
+    else if (isCardAccount(tx.account)) hit = DuitRules.routeCardTx(row, rules).kind === "spend" && isLabel();
+    const amount = tx.withdrawal != null ? tx.withdrawal : -(tx.deposit || 0);
+    if (hit && amount) rows.push({ ...tx, amount, month: m.month, guessed: !tx.category, key: txKey(m.month, i) });
+  }));
+  return rows;
+}
+// "▲ $120 (+8%) vs Aug", or null when there's nothing to compare with.
+// More spend reads red; tone "save" turns that round, "neutral" leaves it uncoloured.
+function deltaHtml(cur, prev, label, tone) {
+  if (prev == null) return null;
+  const d = cur - prev;
+  if (Math.abs(d) < 0.5) return `Same as ${esc(label)}`;
+  const p = pct(cur, prev);
+  const cls = tone === "neutral" ? "" : (d > 0) === (tone === "save") ? "down" : "up";
+  return `<span class="${cls}">${d > 0 ? "▲" : "▼"} ${esc(fmt(Math.abs(d)))}</span>${p != null ? ` (${d > 0 ? "+" : ""}${p}%)` : ""} vs ${esc(label)}`;
+}
+function itemRow(tx, dateText) {
+  const c = spendControls(tx.key, tx);
+  return `<div class="item-row"><span class="item-date">${esc(dateText)}</span><span class="item-desc" data-action="edit-spend" data-key="${esc(tx.key)}">${tx.guessed ? '<span class="guess">~ </span>' : ""}${esc(tx.description)}</span><span class="item-amt" style="color:${tx.amount < 0 ? "var(--success)" : "var(--text)"}">${tx.amount < 0 ? "−" : ""}${esc(fmt(Math.abs(tx.amount)))}</span></div>${c.tag ? `<div class="item-flags">${c.tag}</div>` : ""}${c.editor}`;
+}
+
+function renderMonthDrill(d) {
+  const i = appData.months.findIndex(x => x.month === d.month), m = appData.months[i];
+  if (!m) return `<p class="paste-help">That month is no longer in the ledger.</p>`;
+  const prev = i > 0 ? appData.months[i - 1] : null;
+  const counts = x => !(d.bucket === "opex" && !x.cardSpendAvailable);
+  const entries = bucketEntries(m, d.bucket);
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  const prevMap = prev && counts(prev) ? Object.fromEntries(bucketEntries(prev, d.bucket).map(([k, v]) => [k, v])) : null;
+  const prevTotal = prevMap ? Object.values(prevMap).reduce((s, v) => s + v, 0) : null;
+  const missing = d.bucket === "opex" ? missingCards(m) : [];
+  const sub = !counts(m) ? "No card statement yet"
+    : [deltaHtml(total, prevTotal, prev && shortMonth(prev.month), d.bucket === "other" ? "neutral" : "spend"), missing.length ? `partial: no ${esc(missing.map(sourceLabel).join(", "))} yet` : null].filter(Boolean).join(" &middot; ");
+  const stats = [["Core op-ex", m.cardSpendAvailable ? fmt(opexAmount(m)) : "Pending"], ["Fixed bills", fmt(m.giroOut)], ["Savings", fmt(savingsAmount(m))], ["Total out", fmt(totalOutAdjusted(m))]];
+  if (!ui.hideIncome) stats.push(["In", fmt(m.totalIn)], ["In less out", fmt(m.totalIn - totalOutAdjusted(m))]);
+  const max = entries.reduce((s, [, v]) => Math.max(s, v), 0);
+  const rows = entries.map(([cat, v, tag]) => {
+    const dl = prevMap ? v - (prevMap[cat] || 0) : null;
+    return `<div class="row2 clickable" ${drillAttrs("drill-cat", { cat, bucket: d.bucket, month: m.month })}>
+      <div class="row2-top"><span class="row2-name">${esc(cat)}${tag ? `<span class="tag">${esc(tag)}</span>` : ""}</span><span class="row2-amt">${esc(fmt(v))}</span>${CHEV}</div>
+      <div class="row2-bottom"><div class="row2-bar"><div class="row2-bar-fill" style="width:${max > 0 ? Math.max(0, v / max * 100).toFixed(0) : 0}%;background:var(--text-2)"></div></div>
+      ${dl == null ? "" : Math.abs(dl) > 0.5 ? `<span class="row2-delta ${dl > 0 ? "up" : "down"}${tag === "Savings" ? " save" : ""}">${dl > 0 ? "▲" : "▼"} ${esc(fmt(Math.abs(dl)))}</span>` : `<span class="row2-delta flat">—</span>`}</div>
+    </div>`;
+  }).join("");
+  const merchants = d.bucket === "opex" && m.cardSpendAvailable ? (m.topMerchants || []).slice(0, 5) : [];
+  return `
+  <div class="drill-head">
+    <div class="drill-total">${counts(m) ? esc(fmt(total)) : "Pending"}</div>
+    ${sub ? `<div class="drill-sub">${sub}</div>` : ""}
+  </div>
+  <div class="drill-stats">${stats.map(([k, v]) => `<div class="drill-stat"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join("")}</div>
+  <div class="drill-section">By category${prevMap ? ` &middot; change vs ${esc(shortMonth(prev.month))}` : ""}</div>
+  ${rows || `<p class="paste-help">Nothing in this view for ${esc(m.month)}.</p>`}
+  ${merchants.length ? `<div class="drill-section">Top card merchants</div>
+    ${merchants.map(x => `<div class="item-row"><span class="item-desc">${esc(x.name)}</span><span class="item-amt">${esc(fmt(x.amt))}</span></div>`).join("")}` : ""}`;
+}
+
+const DRILL_ITEM_LIMIT = 100;
+function renderCatDrill(d) {
+  const { filtered } = periodMonths();
+  const counts = m => !(d.bucket === "opex" && !m.cardSpendAvailable);
+  const valueIn = m => (bucketEntries(m, d.bucket).find(([k]) => k === d.cat) || [null, 0])[1];
+  const scope = d.month ? appData.months.filter(m => m.month === d.month) : filtered;
+  const total = scope.reduce((s, m) => s + (counts(m) ? valueIn(m) : 0), 0);
+  // Op-ex averages divide by confirmed months only, as on the overview.
+  const avgMonths = d.bucket === "opex" ? filtered.filter(isConfirmed) : filtered;
+  const avg = avgMonths.length ? avgMonths.reduce((s, m) => s + valueIn(m), 0) / avgMonths.length : null;
+  const sub = d.month ? (avg != null && avgMonths.length > 1 ? deltaHtml(total, avg, "period average", d.bucket === "other" && currentRules().isSavings(d.cat) ? "save" : "spend") : null)
+    : [avg != null && avgMonths.length > 1 ? `${esc(fmt(avg))}/mo average` : null, `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`].filter(Boolean).join(" &middot; ");
+
+  const vals = filtered.map(m => ({ month: m.month, v: counts(m) ? valueIn(m) : null }));
+  const max = Math.max(1, ...vals.map(x => x.v || 0));
+  const trend = filtered.length > 1 ? `<div class="drill-trend" role="group" aria-label="Pick a month">${vals.map(x => `<button class="tb ${d.month === x.month ? "on" : ""}" data-action="drill-pick-month" data-month="${esc(x.month)}" aria-pressed="${d.month === x.month}" title="${esc(x.month)}: ${x.v == null ? "no card statement" : esc(fmt(x.v))}" ${x.v == null ? "disabled" : ""}>${x.v ? `<b>${esc(fmtShort(x.v))}</b>` : ""}<i style="height:${x.v ? Math.max(2, Math.round(x.v / max * 56)) : 2}px"></i>${esc(shortMonth(x.month))}</button>`).join("")}</div>
+    <p class="paste-help" style="margin:0 0 8px;">${d.month ? "Tap the month again to see the whole period." : "Tap a month to see only its rows."}</p>` : "";
+
+  const items = lineItems(scope, d.bucket, d.cat);
+  const byMerchant = {};
+  items.forEach(tx => { const k = tx.description || "Unknown"; byMerchant[k] = (byMerchant[k] || 0) + tx.amount; });
+  const merchants = Object.entries(byMerchant).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const sorted = ui.drillSort === "amount" ? items.slice().sort((a, b) => b.amount - a.amount) : items.slice().sort((a, b) => dateKey(b.date) - dateKey(a.date));
+  const shown = sorted.slice(0, DRILL_ITEM_LIMIT);
+  let list = "";
+  const dayMonth = tx => tx.date.split(" ").slice(0, 2).join(" ");
+  if (ui.drillSort === "amount") list = shown.map(tx => itemRow(tx, dayMonth(tx))).join("");
+  else {
+    const monthTotals = {};
+    items.forEach(tx => { monthTotals[tx.month] = (monthTotals[tx.month] || 0) + tx.amount; });
+    let cur = null;
+    list = shown.map(tx => {
+      const head = tx.month !== cur ? `<div class="drill-month"><span>${esc(tx.month)}</span><span>${esc(fmt(monthTotals[tx.month]))}</span></div>` : "";
+      cur = tx.month;
+      return head + itemRow(tx, dayMonth(tx));
+    }).join("");
+  }
+  const sortBtn = (k, label) => `<button class="btn small ${ui.drillSort === k ? "on" : ""}" data-action="drill-sort" data-sort="${k}">${label}</button>`;
+  return `
+  <div class="drill-head">
+    <div class="drill-total">${esc(fmt(total))}</div>
+    ${sub ? `<div class="drill-sub">${sub}</div>` : ""}
+  </div>
+  ${trend}
+  ${merchants.length > 1 ? `<div class="drill-section">Top merchants</div>
+    ${merchants.map(([name, v]) => `<div class="item-row"><span class="item-desc">${esc(name)}</span><span class="item-amt">${esc(fmt(v))}</span></div>`).join("")}` : ""}
+  <div class="drill-section">${items.length} transaction${items.length !== 1 ? "s" : ""}${items.length > shown.length ? ` &middot; showing ${shown.length}` : ""}</div>
+  ${items.length ? `<div class="toggle-row" style="margin:8px 0;">${sortBtn("date", "Newest")}${sortBtn("amount", "Largest")}</div>` : ""}
+  ${shown.some(tx => tx.guessed) ? `<p class="paste-help" style="margin:0 0 8px;">Rows marked ~ are categorised from the description, not a saved label.</p>` : ""}
+  ${d.bucket === "opex" && shown.some(tx => tx.spendType) ? `<p class="paste-help" style="margin:0 0 8px;">Flagged rows show what was paid. Core op-ex leaves exceptional rows out and spreads asset and prepaid rows over their months, so the rows may not add up to the total.</p>` : ""}
+  <div class="items drill-list">${list || `<p class="paste-help">No line items. Months entered by hand have totals only.</p>`}</div>`;
 }
 
 /* ============================== add month tab ============================== */
@@ -1939,7 +2110,17 @@ function wireOnce() {
     const list = document.getElementById("tx-list");
     if (list) list.innerHTML = renderTxList();
   });
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && (ui.sheet || ui.pdfImport) && !(ui.pdfImport && !OVER_IMPORT.has(ui.sheet))) { ui.sheet = null; render(); } });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && (ui.sheet || ui.pdfImport) && !(ui.pdfImport && !OVER_IMPORT.has(ui.sheet))) { ui.sheet = null; render(); }
+    else if (e.key === "Escape" && ui.drill.length && !ui.pdfImport) { closeDrill(1); render(); }
+    // Rows that open a sheet are divs with role="button"; Enter and Space work as on a button.
+    else if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches('[role="button"][data-action]')) { e.preventDefault(); e.target.click(); }
+  });
+  // Back closes the top drill-down sheet. Each open level pushed one history entry.
+  window.addEventListener("popstate", e => {
+    const depth = (e.state && e.state.drill) || 0;
+    if (depth < ui.drill.length) { ui.drill = ui.drill.slice(0, depth); ui.editTx = null; render(); }
+  });
   // The FAB hides while scrolling down through content and returns on scroll up.
   let lastY = window.scrollY;
   window.addEventListener("scroll", () => {
@@ -2018,9 +2199,9 @@ function onClick(e) {
   if (action === "close-sheet") {
     // The backdrop carries this action too; only a tap on the backdrop itself closes.
     if (btn.classList.contains("sheet-backdrop") && e.target !== btn) return;
-    ui.sheet = null; ui.keyTest = null; ui.selectedCat = null; ui.restore = null; render();
+    ui.sheet = null; ui.keyTest = null; ui.restore = null; closeDrill(ui.drill.length); render();
   }
-  else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); ui.selectedCat = null; ui.txLimit = 0; ui.editTx = null; render(); window.scrollTo(0, 0); }
+  else if (action === "set-tab") { ui.tab = btn.getAttribute("data-tab"); closeDrill(ui.drill.length); ui.txLimit = 0; ui.editTx = null; render(); window.scrollTo(0, 0); }
   else if (action === "edit-spend") { const k = btn.getAttribute("data-key"); ui.editTx = ui.editTx === k ? null : k; render(); }
   else if (action === "confirm-spend") saveSpend(btn.getAttribute("data-key"), { spendType: btn.getAttribute("data-type"), life: null });
   else if (action === "dismiss-spend") saveSpend(btn.getAttribute("data-key"), { suggestDismissed: true });
@@ -2029,7 +2210,7 @@ function onClick(e) {
     // Choosing Normal also stops the row being suggested again.
     saveSpend(btn.getAttribute("data-key"), type ? { spendType: type, life: null } : { spendType: null, life: null, suggestDismissed: true });
   }
-  else if (action === "open-add") { ui.sheet = "add"; ui.selectedCat = null; ui.syncError = null; render(); }
+  else if (action === "open-add") { ui.sheet = "add"; ui.syncError = null; render(); }
   else if (action === "open-sheet") {
     ui.sheet = btn.getAttribute("data-sheet"); render();
     const ta = document.getElementById("paste-input"); if (ta) ta.focus();
@@ -2049,13 +2230,20 @@ function onClick(e) {
     render();
   }
   else if (action === "toggle-income") { ui.hideIncome = !ui.hideIncome; render(); }
-  else if (action === "set-bucket") { ui[btn.getAttribute("data-key")] = btn.getAttribute("data-value"); ui.selectedCat = null; render(); }
-  else if (action === "select-cat") { const c = btn.getAttribute("data-cat"); ui.selectedCat = c; render(); }
+  else if (action === "set-bucket") { ui[btn.getAttribute("data-key")] = btn.getAttribute("data-value"); render(); }
+  else if (action === "drill-month") openDrill({ kind: "month", bucket: btn.getAttribute("data-bucket"), month: btn.getAttribute("data-month") });
+  else if (action === "drill-cat") openDrill({ kind: "cat", bucket: btn.getAttribute("data-bucket"), cat: btn.getAttribute("data-cat"), month: btn.getAttribute("data-month") || null });
+  else if (action === "drill-back") { closeDrill(1); render(); }
+  else if (action === "drill-pick-month") {
+    const top = ui.drill[ui.drill.length - 1], month = btn.getAttribute("data-month");
+    if (top) { top.month = top.month === month ? null : month; ui.editTx = null; render(); }
+  }
+  else if (action === "drill-sort") { ui.drillSort = btn.getAttribute("data-sort"); render(); }
   else if (action === "clear-data") {
     if (ui.confirmClear) {
       const storage = ui.storage;
       clearAllData().then(() => {
-        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", bucketDeep: "opex", selectedCat: null, sheet: null, customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null, storage };
+        ui = { tab: "overview", fromIdx: 0, toIdx: 0, hideIncome: true, bucketOverview: "opex", bucketDeep: "opex", drill: [], drillSort: "date", sheet: null, customPeriod: false, txQuery: "", txLimit: 0, syncError: null, lastSynced: null, storage };
         showToast("Data cleared.");
         render();
       }).catch(err => { ui.syncError = "Couldn't clear data: " + err.message; render(); });
