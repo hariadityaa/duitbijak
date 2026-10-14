@@ -56,7 +56,7 @@ function renderHeader() {
       <button class="icon-btn" data-action="open-settings" aria-label="Settings" title="Settings">${ICON(ICONS.settings)}</button>
     </div>
   </header>
-  ${ui.storage === "local" && !months.length ? `<div class="banner warn">${WARN_ICON}<span>This data lives only in this browser's local storage — nothing is uploaded anywhere unless you choose to read a statement with Gemini. Each visitor (and each device) keeps their own separate ledger; tap + to add your own statements.</span></div>` : ""}
+  ${ui.storage === "local" && !months.length ? `<div class="banner warn">${WARN_ICON}<span>This data lives only in this browser's local storage — nothing is uploaded anywhere. Each visitor (and each device) keeps their own separate ledger; tap + to add your own statements.</span></div>` : ""}
   ${ui.syncError ? `<div class="banner error">${WARN_ICON}<span>${esc(ui.syncError)}</span></div>` : ""}
   ${renderAppPrompts()}
   `;
@@ -143,8 +143,9 @@ function renderPdfReview() {
     return `
     <div class="pdf-file">
       <label class="pdf-head"><input type="checkbox" data-action="pdf-toggle-file" data-idx="${i}" ${f.include ? "checked" : ""}><strong>${esc(f.file)}</strong></label>
-      <div class="pdf-meta">${esc((f.accounts || []).map(a => (appData.accounts[a.id] || a).name).join(", ") || f.label)}${f.readBy === "gemini" ? ` <span class="pdf-tag" title="${esc(f.model)}">Read by Gemini</span>` : ""} &middot; statement ${esc(f.statementDate)} &middot; ${f.rows.length} row${f.rows.length !== 1 ? "s" : ""}${allOk ? "" : " &middot; <strong>totals don't match, so it's unticked</strong>"}</div>
-      <div class="pdf-checks">${checks}</div>
+      <div class="pdf-meta">${esc((f.accounts || []).map(a => (appData.accounts[a.id] || a).name).join(", ") || f.label)}${f.readBy === "gemini" ? ` <span class="pdf-tag" title="${esc(f.model)}">AI read</span>` : ""} &middot; statement ${esc(f.statementDate)} &middot; ${f.rows.length} row${f.rows.length !== 1 ? "s" : ""}${allOk ? "" : " &middot; <strong>totals don't match, so it's unticked</strong>"}</div>
+      <div class="pdf-checks">${checks}${!allOk && f.geminiError ? `<div class="pdf-check bad">${CROSS_ICON}<span>${esc(f.geminiError)}</span></div>` : ""}</div>
+      ${!allOk && f.pages ? renderGeminiOffer(f, i) : ""}
       <button class="btn small ghost" data-action="pdf-toggle-rows" data-idx="${i}" style="margin-top:8px;">${f.open ? "Hide rows" : "Show rows"}</button>
       ${table}
     </div>`;
@@ -156,7 +157,7 @@ function renderPdfReview() {
   return `
   <div class="card">
     <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Review PDF import</p>
-    <p class="paste-help">Each file's rows are checked against the statement's own totals. Categories are guessed at import, as with CSV.${st.files.some(f => f.readBy === "gemini") ? " Check rows read by Gemini closely: a model can misread a statement." : ""}</p>
+    <p class="paste-help">Each file's rows are checked against the statement's own totals. Categories are guessed at import, as with CSV.${st.files.some(f => f.readBy === "gemini") ? " Check rows from an AI read closely: a model can misread a statement." : ""}</p>
     ${files}
     ${summary}
     <div class="btn-row">
@@ -166,12 +167,12 @@ function renderPdfReview() {
   </div>`;
 }
 
-// Shown on a file no built-in parser knows. Nothing is sent without a tap,
-// and the first tap only shows the consent note.
+// Shown on a file no built-in parser could read, or whose totals don't match.
+// Nothing is sent without a tap, and the first tap only shows the consent note.
 function renderGeminiOffer(f, i) {
-  if (f.geminiBusy) return `<p class="pdf-consent" role="status">Reading with Gemini… this can take up to a minute.</p>`;
+  if (f.geminiBusy) return `<p class="pdf-consent" role="status">AI read in progress… this can take up to a minute.</p>`;
   if (!DuitGemini.loadKeys().gemini) return `
-      <button class="btn small" data-action="open-settings" style="margin-top:8px;">Add a Gemini key in Settings to read it</button>`;
+      <button class="btn small" data-action="open-settings" style="margin-top:8px;">Add an AI key in Settings to try an AI read</button>`;
   if (f.askConsent) return `
       <p class="pdf-consent">${GEMINI_CONSENT_TEXT}</p>
       <div class="btn-row" style="margin:8px 0 0 24px;">
@@ -179,7 +180,7 @@ function renderGeminiOffer(f, i) {
         <button class="btn small ghost" data-action="pdf-gemini-cancel" data-idx="${i}">Cancel</button>
       </div>`;
   return `
-      <button class="btn small" data-action="pdf-gemini" data-idx="${i}" style="margin-top:8px;">Read with Gemini</button>`;
+      <button class="btn small" data-action="pdf-gemini" data-idx="${i}" style="margin-top:8px;">Try AI read (optional)</button>`;
 }
 const GEMINI_CONSENT_TEXT = `<strong>This sends the statement's text to Google.</strong> On Gemini's free tier, Google may use it to improve its products (<a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">terms</a>). Turning on billing for your key stops that. You'll only be asked once on this device.`;
 
@@ -187,9 +188,13 @@ function renderSettings() {
   const key = DuitGemini.loadKeys().gemini;
   const test = ui.keyTest;
   return `
-  <div class="card" id="settings-card">
-    <p class="card-title" style="border:none;margin-bottom:8px;padding-bottom:0;">Settings</p>
-    <p class="paste-help"><strong>Gemini API key</strong>: reads statement PDFs the built-in parsers don't know, only when you tap "Read with Gemini". The key is kept in this browser only, never in your ledger data or sync. Get one free from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.</p>
+  <div class="section-label">Rules</div>
+  <button class="action-row" data-action="open-rules">Transaction rules<span>Fixed bills, salary, one-offs, card payments and transfers.</span></button>
+  <button class="action-row" data-action="open-sheet" data-sheet="accounts">Accounts<span>Rename your accounts and cards, or hide ones you've closed.</span></button>
+  ${renderDataSettings()}
+  <details class="card ai-settings" style="margin-top:24px;" ${key || test ? "open" : ""}>
+    <summary>Optional: AI statement reader</summary>
+    <p class="paste-help">Reads statement PDFs the built-in parsers can't handle, only when you tap "Try AI read". Uses Google Gemini with your own key. The key is kept in this browser only, never in your ledger data or sync. Get one free from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.</p>
     <p class="paste-help" style="margin-top:0;">Saved key: <span class="num">${esc(DuitGemini.maskKey(key))}</span></p>
     <div class="key-row">
       <input type="password" id="gemini-key-input" aria-label="Gemini API key" placeholder="${key ? "Paste a new key to replace it" : "Paste your Gemini API key"}" autocomplete="off" spellcheck="false">
@@ -203,9 +208,5 @@ function renderSettings() {
     ${test ? `<p class="paste-help" role="status" style="margin:8px 0 0;">${test.busy ? "Testing…" : `${test.ok ? "Works" : "Failed"}: ${esc(test.message)}`}</p>` : ""}
     <p class="paste-help" style="margin:12px 0 0;">The setup link carries your key, so treat it like a password. Opening it on another device saves the key there and removes it from the address bar. Anyone holding it can spend your key.</p>
     <p class="paste-help" style="margin:8px 0 0;">${DuitGemini.hasConsent() ? "You've agreed to send statement text to Google on this device." : "You'll be asked before any statement text is first sent to Google."}</p>
-  </div>
-  <div class="section-label">Rules</div>
-  <button class="action-row" data-action="open-rules">Transaction rules<span>Fixed bills, salary, one-offs, card payments and transfers.</span></button>
-  <button class="action-row" data-action="open-sheet" data-sheet="accounts">Accounts<span>Rename your accounts and cards, or hide ones you've closed.</span></button>
-  ${renderDataSettings()}`;
+  </details>`;
 }

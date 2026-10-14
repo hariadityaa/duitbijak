@@ -183,6 +183,8 @@
     margin:0 0 16px; padding-bottom:12px; border-bottom:1px solid var(--border);
     display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
   }
+  .ai-settings > summary{ cursor:pointer; font-size:13px; font-weight:600; color:var(--text-2); }
+  .ai-settings[open] > summary{ margin-bottom:8px; }
   .section-label{ font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; margin:24px 0 12px; }
 
   .metrics{ display:grid; grid-template-columns:minmax(0,1fr); gap:12px; margin-bottom:24px; }

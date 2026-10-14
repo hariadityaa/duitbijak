@@ -130,7 +130,7 @@ function renderDataSettings() {
   <input type="file" accept=".json,application/json" id="restore-file-input" style="display:none">
   ${ui.restore ? `<div class="card" style="margin-top:12px;"><p class="paste-help" style="margin-top:0;">Replace all data in this app with <strong>${esc(ui.restore.name)}</strong>? It has ${ui.restore.data.months.length} month${ui.restore.data.months.length !== 1 ? "s" : ""}. What's here now is lost.</p>
     <div class="btn-row"><button class="btn danger" data-action="confirm-restore">Replace with backup</button><button class="btn ghost" data-action="cancel-restore">Cancel</button></div></div>` : ""}
-  <p class="settings-meta" style="margin-top:24px;"><a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> is a local-only finance ledger. Nothing you enter leaves your browser, unless you choose to read a statement with Gemini.</p>`;
+  <p class="settings-meta" style="margin-top:24px;"><a href="https://github.com/hariadityaa/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> is a local-only finance ledger. Nothing you enter leaves your browser.</p>`;
 }
 
 // Opening "#setup?gemini=…" saves the key, then strips it from the address bar.

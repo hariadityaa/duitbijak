@@ -216,7 +216,7 @@ function onClick(e) {
     if (action === "pdf-gemini-cancel") { f.askConsent = false; render(); return; }
     if (action === "pdf-gemini-consent") { try { DuitGemini.giveConsent(); } catch (e) {} }
     else if (!DuitGemini.hasConsent()) { f.askConsent = true; render(); return; }
-    readWithGemini(f).catch(err => { f.geminiBusy = false; f.geminiError = "Gemini read failed: " + err.message; render(); });
+    readWithGemini(f).catch(err => { f.geminiBusy = false; f.geminiError = "AI read failed: " + err.message; render(); });
   }
   else if (action === "open-rules") {
     if (!ui.rulesDraft) ui.rulesDraft = DuitRules.normaliseRules(appData.rules);
