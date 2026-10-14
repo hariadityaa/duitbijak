@@ -352,9 +352,10 @@ async function parsePdf(pdfjs, data, fileName, onPassword) {
   try { pages = await extractPages(pdfjs, data, onPassword); }
   catch (err) { return { file: fileName, error: /Skipped/.test(err.message) ? err.message : `Couldn't open this PDF (${err.message}).` }; }
   const res = parseStatement(pages, fileName);
-  // Kept in memory only, so "Read with Gemini" can send the text without
-  // reopening the PDF (and asking for its password again).
-  if (res.unknownLayout) res.pages = pages;
+  // Kept in memory only, so "AI read" can send the text without reopening
+  // the PDF (and asking for its password again). Offered when no parser
+  // could read the file or the parsed totals don't match.
+  if (res.error || (res.checks && !res.checks.every(c => c.ok))) res.pages = pages;
   return res;
 }
 
