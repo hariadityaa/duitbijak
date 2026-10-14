@@ -280,6 +280,8 @@
 
   .items{ padding:0; }
   .item-row{ display:flex; align-items:baseline; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .out-note{ display:block; font-size:12px; color:var(--text-2); white-space:normal; }
+  .out-total{ font-weight:600; border-bottom:none; }
   .item-row:last-child{ border-bottom:none; }
   .item-date{ color:var(--text-2); font-size:12px; white-space:nowrap; }
   .item-desc{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -679,12 +681,12 @@ function opexLineItems(months, category) {
   return rows.sort((a, b) => b.amount - a.amount);
 }
 /* ============================== one-off spend ==============================
-   Rows flagged asset, prepaid or exceptional (see categorise.js). Saved month
+   Rows flagged asset, prepaid, exceptional or capital (see categorise.js). Saved month
    totals stay cash. Core op-ex is worked out here: a flagged row leaves its
    month, and an asset or prepaid row comes back as an even share in each
    month it's spread over. Total Out stays cash. */
 const SPEND_TYPES = DuitCategorise.SPEND_TYPES;
-const FLAG_GROUPS = { asset: "Assets", prepaid: "Prepaid", exceptional: "Exceptional" };
+const FLAG_GROUPS = { asset: "Assets", prepaid: "Prepaid", exceptional: "Exceptional", capital: "Capital" };
 function spendFlags(t) {
   const out = {};
   if (SPEND_TYPES[t.spendType]) { out.spendType = t.spendType; if (Number(t.life) > 0) out.life = Number(t.life); }
@@ -820,6 +822,26 @@ function opexAmount(m) { return m.cardSpendAvailable ? round2((m.cardSpend || 0)
 function totalOutAdjusted(m) { return round2((m.totalOut || 0) + ccpAdjustment(m)); }
 function reimbursementAmount(m) { return (m.otherCategories && m.otherCategories["Reimbursement"]) || 0; }
 function netOpexAmount(m) { const g = opexAmount(m); return g != null ? round2(g - reimbursementAmount(m)) : null; }
+/* Total out, taken apart so the parts add up to it. Core op-ex isn't cash:
+   it carries spread shares of earlier buys and leaves flagged rows out, so
+   the bridge takes the shares off and puts the one-offs back. Whole dollars,
+   with the spread as the remainder, so the shown figures sum exactly. */
+function outBreakdown(months) {
+  const flagged = oneOffModel().flagged;
+  let core = 0, noCard = 0, oneOffs = 0, ruleOneOffs = 0, fixed = 0, saved = 0, total = 0, confirmedMonths = 0;
+  months.forEach(m => {
+    const out = totalOutAdjusted(m), saving = savingsAmount(m);
+    const paid = flagged.filter(r => r.month === m.month).reduce((s, r) => s + r.amount, 0);
+    total += out; fixed += m.giroOut || 0; saved += saving; ruleOneOffs += (m.otherOut || 0) - saving; oneOffs += paid;
+    if (m.cardSpendAvailable) { core += opexAmount(m); confirmedMonths++; }
+    else noCard += out - (m.giroOut || 0) - (m.otherOut || 0) - paid;
+  });
+  const r = Math.round;
+  const parts = { core: r(core), noCard: r(noCard), oneOffs: r(oneOffs), ruleOneOffs: r(ruleOneOffs), fixed: r(fixed), saved: r(saved), total: r(total), confirmedMonths };
+  parts.spread = parts.core + parts.noCard + parts.oneOffs + parts.ruleOneOffs + parts.fixed + parts.saved - parts.total;
+  parts.spend = parts.core - parts.spread + parts.noCard;
+  return parts;
+}
 
 /* ============================== persistence ==============================
    Two layers: the `db` capability (a shared, realtime store scoped to this
@@ -1135,6 +1157,7 @@ function renderSheet() {
   else if (ui.sheet === "month") { key = "month"; title = "Enter a month by hand"; body = renderAddMonth(); }
   else if (ui.sheet === "statements") { key = "statements"; title = "Statements"; body = renderStatements(); }
   else if (ui.sheet === "review" && appData.months.length) { key = "review"; title = "One-offs to review"; body = renderReview(); }
+  else if (ui.sheet === "out" && appData.months.length) { key = "out"; title = `Total out · ${periodLabel(periodMonths().filtered)}`; body = renderOutSheet(); }
   else if (ui.drill.length && appData.months.length) {
     const d = ui.drill[ui.drill.length - 1];
     // The month filter isn't in the key, so picking a month keeps the scroll and skips the animation.
@@ -1722,7 +1745,7 @@ function renderOverview(filtered) {
     </div>
     <div class="metric"><div class="metric-label">Core Op-Ex / mo</div><div class="metric-value">${avgOpex != null ? esc(fmt(avgOpex)) : "—"}</div><div class="metric-sub">${confirmed.length} month${confirmed.length !== 1 ? "s" : ""} confirmed${partialCard.length ? ` &middot; ${esc(partialCard.map(mo => mo.split(" ")[0]).join(", "))} partial` : ""}</div></div>
     ${hasReimb ? `<div class="metric"><div class="metric-label">Net Op-Ex / mo</div><div class="metric-value">${netAvgOpex != null ? esc(fmt(netAvgOpex)) : "—"}</div><div class="metric-sub">core, after reimbursements</div></div>` : ""}
-    <div class="metric clickable${hasReimb ? "" : " wide"}" role="button" tabindex="0" data-action="show-txns"><div class="metric-label">Total out${CHEV}</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div></div>
+    <div class="metric clickable${hasReimb ? "" : " wide"}" role="button" tabindex="0" data-action="open-sheet" data-sheet="out"><div class="metric-label">Total out${CHEV}</div><div class="metric-value">${esc(fmt(totalOut))}</div><div class="metric-sub">${!ui.hideIncome ? `in ${esc(fmt(totalIn))}` : `${filtered.length} month${filtered.length !== 1 ? "s" : ""}`}${partial.length ? ` &middot; excl. ${esc(partial.join(", "))}` : ""}</div><div class="metric-sub">${esc(outSplit(outBreakdown(filtered)))}</div></div>
     ${ui.hideIncome ? "" : `<div class="metric wide"><div class="metric-label">Savings / mo</div><div class="metric-value">${esc(fmt(totalSavings / filtered.length))}</div><div class="metric-sub">${esc(savingsSub)}</div></div>`}
     ${oneOffTotal || pendingSuggestions ? `<div class="metric wide ${pendingSuggestions ? "clickable" : ""}" ${pendingSuggestions ? 'role="button" tabindex="0" data-action="open-sheet" data-sheet="review"' : ""}><div class="metric-label">One-offs${pendingSuggestions ? CHEV : ""}</div>
       <div class="metric-value">${esc(fmt(oneOffTotal))}<small> &middot; ${esc(fmt(oneOffTotal / filtered.length))}/mo</small></div>
@@ -1958,7 +1981,7 @@ function renderCatDrill(d) {
   <div class="drill-section">${items.length} transaction${items.length !== 1 ? "s" : ""}${items.length > shown.length ? ` &middot; showing ${shown.length}` : ""}</div>
   ${items.length ? `<div class="toggle-row" style="margin:8px 0;">${sortBtn("date", "Newest")}${sortBtn("amount", "Largest")}</div>` : ""}
   ${shown.some(tx => tx.guessed) ? `<p class="paste-help" style="margin:0 0 8px;">Rows marked ~ are categorised from the description, not a saved label.</p>` : ""}
-  ${d.bucket === "opex" && shown.some(tx => tx.spendType) ? `<p class="paste-help" style="margin:0 0 8px;">Flagged rows show what was paid. Core op-ex leaves exceptional rows out and spreads asset and prepaid rows over their months, so the rows may not add up to the total.</p>` : ""}
+  ${d.bucket === "opex" && shown.some(tx => tx.spendType) ? `<p class="paste-help" style="margin:0 0 8px;">Flagged rows show what was paid. Core op-ex leaves exceptional and capital rows out and spreads asset and prepaid rows over their months, so the rows may not add up to the total.</p>` : ""}
   <div class="items drill-list">${list || `<p class="paste-help">No line items. Months entered by hand have totals only.</p>`}</div>
   ${items.length ? `<div class="btn-row drill-more"><button class="btn" data-action="drill-to-txns">See all in Transactions</button></div>` : ""}`;
 }
@@ -1987,6 +2010,33 @@ function renderAddMonth() {
   </div>`;
 }
 
+/* ============================== total out ============================== */
+// Fixed bills and savings can back out salary, so with income hidden they
+// show as one figure, as in the month drill.
+function outSplit(b) {
+  const parts = [["Spend", b.spend], ["One-offs", b.oneOffs + b.ruleOneOffs]];
+  if (ui.hideIncome) parts.push(["Fixed & saved", b.fixed + b.saved]);
+  else parts.push(["Fixed", b.fixed], ["Saved", b.saved]);
+  return parts.filter(([, v]) => v).map(([k, v]) => `${k} ${fmt(v)}`).join(" · ");
+}
+// From core op-ex to Total out, one step a row.
+function renderOutSheet() {
+  const { filtered } = periodMonths(), b = outBreakdown(filtered);
+  const signed = v => v < 0 ? `−${fmt(-v)}` : `+${fmt(v)}`;
+  const rows = [
+    ["Core op-ex", `${b.confirmedMonths} month${b.confirmedMonths !== 1 ? "s" : ""} with card statements`, fmt(b.core)],
+    ["Spread shares", "Asset and prepaid buys counted in op-ex, paid in their own month", signed(-b.spread)],
+    ["Spend, no card statement", "Bank spend in months still waiting on cards", signed(b.noCard)],
+    ["One-offs paid", "Flagged rows, at what was paid", signed(b.oneOffs)],
+    ["Other one-offs", "Your one-off categories", signed(b.ruleOneOffs)],
+    ...(ui.hideIncome ? [["Fixed bills & savings", "", signed(b.fixed + b.saved)]]
+      : [["Fixed bills", "", signed(b.fixed)], ["Savings", "", signed(b.saved)]]),
+  ].filter(([k, , v], i) => i === 0 || v !== "+$0");
+  return `<p class="paste-help">Core op-ex is the running cost of living, not cash. Total out is every dollar that left. This is the bridge for ${esc(periodLabel(filtered))}.</p>
+  ${rows.map(([k, note, v]) => `<div class="item-row"><span class="item-desc">${esc(k)}${note ? `<small class="out-note">${esc(note)}</small>` : ""}</span><span class="item-amt">${esc(v)}</span></div>`).join("")}
+  <div class="item-row out-total"><span class="item-desc">Total out</span><span class="item-amt">${esc(fmt(b.total))}</span></div>
+  <div class="btn-row drill-more"><button class="btn" data-action="show-txns">See transactions</button></div>`;
+}
 /* ============================== one-off review ============================== */
 // Only the suggested rows in the period, newest first. Confirmed or
 // dismissed rows drop off the list as they're saved.

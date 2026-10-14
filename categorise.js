@@ -116,7 +116,8 @@ function canonCategoryTotals(totals) {
 
 /* One-off spend, classed by what it buys rather than by size alone:
    asset (lasts years, spread over its life), prepaid (covers a coming period,
-   spread over it) and exceptional (kept out of core op-ex, shown on its own).
+   spread over it), exceptional (kept out of core op-ex, shown on its own) and
+   capital (a home or other balance-sheet buy, never counted as op-ex).
    The size threshold only decides what gets suggested. */
 const ONE_OFF_THRESHOLD = 500;
 const TRAVEL_CLUSTER_DAYS = 3;
@@ -124,6 +125,7 @@ const SPEND_TYPES = {
   asset: { label: "Asset", life: 36 },
   prepaid: { label: "Prepaid", life: 12 },
   exceptional: { label: "Exceptional", life: 0 },
+  capital: { label: "Capital", life: 0 },
 };
 const ASSET_CATEGORIES = new Set(["Electronics", "Home & Furniture"]);
 const PREPAID_MATCH = /ANNUAL FEE|CARD MEMBERSHIP|CARD FEE/i;
@@ -161,7 +163,7 @@ function suggestSpendTypes(rows) {
   });
 }
 
-// Months a flagged row is spread over: 0 for exceptional or unflagged.
+// Months a flagged row is spread over: 0 for exceptional, capital or unflagged.
 function spreadLife(tx) {
   const t = tx && SPEND_TYPES[tx.spendType];
   if (!t || !t.life) return 0;

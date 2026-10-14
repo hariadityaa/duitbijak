@@ -125,6 +125,7 @@ test("one-off spreads: $2,050 over 36 months and $360 over 12", () => {
   assert.strictEqual(spreadLife({ spendType: "asset", life: 24 }), 24);
   assert.strictEqual(spreadLife({ spendType: "prepaid" }), 12);
   assert.strictEqual(spreadLife({ spendType: "exceptional" }), 0);
+  assert.strictEqual(spreadLife({ spendType: "capital", life: 120 }), 0);
   assert.strictEqual(spreadLife({}), 0);
   assert.strictEqual(Math.round(monthShare(2050, 36, "Aug 2026", "Aug 2026") * 100) / 100, 56.94);
   assert.strictEqual(Math.round(monthShare(2050, 36, "Aug 2026", "Jul 2029") * 100) / 100, 56.94);
