@@ -1,11 +1,12 @@
 // Bump this on any deploy that changes the files below. A new sw.js is what
 // tells open copies of the app that an update is ready. CI checks the bump.
-const CACHE_NAME = "duit-bijak-v5";
+const CACHE_NAME = "duit-bijak-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
   "./pdf-import.js",
+  "./categorise.js",
   "./icons/icon-192-v3.png",
   "./icons/icon-512-v3.png",
   "./icons/icon-maskable-512-v3.png",
