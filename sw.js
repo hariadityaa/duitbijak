@@ -1,14 +1,15 @@
 // Bump this on any change to the cached files below so old clients pick up
 // the update instead of serving a stale app shell forever.
-const CACHE_NAME = "duit-bijak-v2";
+const CACHE_NAME = "duit-bijak-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png",
+  "./icons/icon-192-v3.png",
+  "./icons/icon-512-v3.png",
+  "./icons/icon-maskable-512-v3.png",
+  "./icons/apple-touch-icon-v3.png",
+  "./icons/favicon-v3.svg",
 ];
 
 self.addEventListener("install", event => {
