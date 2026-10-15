@@ -3,7 +3,7 @@
 "use strict";
 
 /* ============================== install & updates ============================== */
-// Chrome's menu install can say "already installed" when another app on hariadityaa.github.io
+// Chrome's menu install can say "already installed" when another app on hurrymeow.github.io
 // is installed. The page prompt checks this app's scope correctly, so offer it in the page.
 const INSTALL_DECLINED = "duitbijak.installDeclined";
 const pwa = { installEvent: null, installDeclined: false, updateReady: false };
