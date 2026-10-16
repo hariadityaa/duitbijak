@@ -145,6 +145,7 @@ function onClick(e) {
   else if (action === "custom-period") { ui.customPeriod = true; render(); }
   else if (action === "tx-more") { ui.txLimit = (ui.txLimit || TX_PAGE) + TX_PAGE; const list = document.getElementById("tx-list"); if (list) list.innerHTML = renderTxList(); }
   else if (action === "apply-update") { location.reload(); }
+  else if (action === "share-app") { shareApp(); }
   else if (action === "install-app") {
     const ev = pwa.installEvent;
     pwa.installEvent = null; render();
