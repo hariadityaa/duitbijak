@@ -153,7 +153,21 @@ function renderDataSettings() {
   <input type="file" accept=".json,application/json" id="restore-file-input" style="display:none">
   ${ui.restore ? `<div class="card" style="margin-top:12px;"><p class="paste-help" style="margin-top:0;">Replace all data in this app with <strong>${esc(ui.restore.name)}</strong>? It has ${ui.restore.data.months.length} month${ui.restore.data.months.length !== 1 ? "s" : ""}. What's here now is lost.</p>
     <div class="btn-row"><button class="btn danger" data-action="confirm-restore">Replace with backup</button><button class="btn ghost" data-action="cancel-restore">Cancel</button></div></div>` : ""}
+  <div class="section-label">Share app</div>
+  <p class="settings-meta">Send Duit Bijak to a friend. Only the link is shared, never your data.</p>
+  <div class="btn-row" style="margin-top:0;"><button class="btn" data-action="share-app">Share link</button></div>
   <p class="settings-meta" style="margin-top:24px;"><a href="https://github.com/hurrymeow/duitbijak" target="_blank" rel="noopener">Duit Bijak</a> is a local-only finance ledger. Nothing you enter leaves your browser.</p>`;
+}
+
+// Installed apps hide the address bar, so this is the only way to find the link.
+async function shareApp() {
+  const url = new URL("./", location.href).href;
+  if (navigator.share) {
+    try { await navigator.share({ title: "Duit Bijak", url }); return; }
+    catch (e) { if (e && e.name === "AbortError") return; }
+  }
+  try { await navigator.clipboard.writeText(url); showToast("Link copied."); }
+  catch (e) { showToast(url); }
 }
 
 // Opening "#setup?gemini=…" saves the key, then strips it from the address bar.
